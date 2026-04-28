@@ -23,7 +23,7 @@ export default async function ProductsPage() {
   let isStoreClosed = false
 
   if (start && now < start) {
-    const startTimeStr = new Date(settings.sale_start).toLocaleString('th-TH', { 
+    const startTimeStr = new Date(settings!.sale_start).toLocaleString('th-TH', { 
       timeZone: 'Asia/Bangkok', 
       dateStyle: 'medium', 
       timeStyle: 'short' 
