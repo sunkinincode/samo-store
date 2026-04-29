@@ -20,47 +20,31 @@ export async function login(formData: FormData) {
     errorMessage = 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ในขณะนี้'
   }
 
-  // Next.js บังคับว่าห้ามวางฟังก์ชัน redirect() ไว้ใน try...catch เด็ดขาด
   if (errorMessage) {
     redirect(`/login?error=${encodeURIComponent(errorMessage)}`)
   }
 
-  redirect('/')
+  // ล็อกอิน Admin สำเร็จ ให้ไปหน้า /products
+  redirect('/products')
 }
 
-export async function register(formData: FormData) {
-  const email = formData.get('email') as string
-  const password = formData.get('password') as string
-  const username = formData.get('username') as string
+export async function loginWithGoogle() {
   const supabase = await createClient()
-  
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'
-  let errorMessage = ''
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://samostore.koravit.workers.dev'
 
-  try {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          username: username,
-        },
-        emailRedirectTo: `${siteUrl}/auth/callback`,
-      },
-    })
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      // เมื่อ Google ตรวจสอบเสร็จ ให้กลับมาที่เว็บเราแล้วส่งตัวแปร next=/products ไปด้วย
+      redirectTo: `${siteUrl}/auth/callback?next=/products`,
+    },
+  })
 
-    if (error) errorMessage = error.message
-  } catch (err) {
-    console.error("Network Catch Error:", err)
-    errorMessage = 'เครือข่ายมีปัญหา ไม่สามารถเชื่อมต่อฐานข้อมูลได้ (Timeout)'
+  if (data?.url) {
+    redirect(data.url)
+  } else if (error) {
+    redirect(`/login?error=${encodeURIComponent('ไม่สามารถเชื่อมต่อกับ Google ได้')}`)
   }
-
-  // หากมี Error ไม่ว่าจะจาก Supabase หรือเน็ตหลุด ให้ Redirect กลับไปพร้อมข้อความเตือน
-  if (errorMessage) {
-    redirect(`/register?error=${encodeURIComponent(errorMessage)}`)
-  }
-
-  redirect(`/login?message=${encodeURIComponent('กรุณาตรวจสอบอีเมลของคุณเพื่อยืนยันบัญชี')}`)
 }
 
 export async function logout() {

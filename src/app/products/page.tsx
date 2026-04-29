@@ -35,9 +35,24 @@ export default async function ProductsPage() {
     isStoreClosed = true
   }
 
+  // ดึงชื่อผู้ใช้มาแสดง (ถ้าไม่มีชื่อเต็มจาก Google ให้ใช้อีเมลแทน)
+  const displayName = user ? (user.user_metadata?.full_name || user.user_metadata?.name || user.email) : null;
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
+      
+      {/* ส่วนหัวแสดงคำกล่าวต้อนรับ (แสดงเฉพาะตอนที่ผู้ใช้ล็อกอินแล้ว) */}
+      {user && (
+        <header className="bg-white border-b border-gray-100 py-6 px-4 shadow-sm animate-in fade-in slide-in-from-top-2 duration-500">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <h2 className="text-2xl font-bold text-gray-900">
+              ยินดีต้อนรับ, <span className="text-blue-600">{displayName}</span> 👋
+            </h2>
+            <p className="text-gray-500 mt-1 text-sm">เลือกชมและสั่งซื้อสินค้าที่คุณสนใจได้เลยครับ</p>
+          </div>
+        </header>
+      )}
       
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
         
@@ -78,7 +93,6 @@ export default async function ProductsPage() {
                   </Link>
                 ) : (
                   <div className="aspect-square bg-gray-50 relative overflow-hidden block cursor-pointer" 
-                       // ใช้ HTML title เพื่ออธิบายเมื่อเอาเมาส์ชี้ แทนการใช้ alert
                        title={!user ? "กรุณาเข้าสู่ระบบ" : isStoreClosed ? "ยังไม่เปิดรับออร์เดอร์" : ""}>
                     <ProductImage product={product} />
                     <ProductBadges isOutOfStock={isOutOfStock} isStoreClosed={isStoreClosed} />

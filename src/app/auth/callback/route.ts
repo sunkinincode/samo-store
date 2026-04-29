@@ -1,11 +1,11 @@
-import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
+import { NextResponse } from 'next/server'
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
   
-  // จุดที่แก้ไข: เปลี่ยนจาก '/' เป็น '/products'
+  // ตรวจสอบว่ามีตัวแปร next แนบมาไหม ถ้าไม่มีให้ไปที่ /products เป็นค่าเริ่มต้น
   const next = searchParams.get('next') ?? '/products'
 
   if (code) {
@@ -13,10 +13,11 @@ export async function GET(request: Request) {
     const { error } = await supabase.auth.exchangeCodeForSession(code)
     
     if (!error) {
+      // แลกเปลี่ยนรหัสสำเร็จ พาไปที่หน้า products
       return NextResponse.redirect(`${origin}${next}`)
     }
   }
 
-  // หากลิงก์หมดอายุหรือมีปัญหา ให้ส่งกลับไปหน้าล็อกอินพร้อมแจ้งเตือน
-  return NextResponse.redirect(`${origin}/login?error=Invalid or expired verification link`)
+  // หากมีปัญหาให้กลับไปหน้าล็อกอินพร้อมข้อความเตือน
+  return NextResponse.redirect(`${origin}/login?error=auth_failed`)
 }
