@@ -53,13 +53,41 @@ export default function ProductDetailPage() {
     : (product?.image_url ? [product.image_url] : [])
 
   useEffect(() => {
-    const fetchProduct = async () => {
+    let channel: ReturnType<typeof supabase.channel>
+
+    const fetchProductAndSubscribe = async () => {
+      // 1. ดึงข้อมูลสินค้าเริ่มต้น
       const { data, error } = await supabase.from('products').select('*').eq('id', productId).single()
       if (data) setProduct(data)
       setLoading(false)
+
+      // 2. สมัครรับข้อมูล Realtime (เปิดท่อรอฟังการอัปเดตสต๊อก)
+      channel = supabase
+        .channel(`product-${productId}`)
+        .on(
+          'postgres_changes',
+          { 
+            event: 'UPDATE', 
+            schema: 'public', 
+            table: 'products',
+            filter: `id=eq.${productId}` 
+          },
+          (payload) => {
+            console.log('🔄 สต๊อกอัปเดตแบบเรียลไทม์:', payload.new.stock_quantity)
+            // อัปเดตเฉพาะค่าสต๊อกใน State ทันที
+            setProduct((prev) => prev ? { ...prev, stock_quantity: payload.new.stock_quantity } : null)
+          }
+        )
+        .subscribe()
     }
-    fetchProduct()
-  }, [productId])
+
+    fetchProductAndSubscribe()
+
+    // 3. ปิดท่อการเชื่อมต่อเมื่อผู้ใช้ออกจากหน้านี้ (กันเมมโมรี่บวม)
+    return () => {
+      if (channel) supabase.removeChannel(channel)
+    }
+  }, [productId, supabase])
 
   const finalUnitPrice = product ? product.price + (isLongSleeve ? (product.long_sleeve_price || 0) : 0) : 0
 
@@ -132,8 +160,8 @@ export default function ProductDetailPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-12 lg:gap-20 items-start">
           
-          {/* ส่วนแกลลอรีรูปภาพ (Image Slider) */}
-          <div className="sticky top-24 space-y-4">
+          {/* ส่วนแกลลอรีรูปภาพ (Image Slider) - แก้ไขเอา sticky top-24 ออกแล้ว */}
+          <div className="space-y-4">
             {/* รูปหลัก */}
             <div className="aspect-[4/5] md:aspect-square bg-gray-50 rounded-[2.5rem] border border-gray-100 overflow-hidden relative group">
               {allImages.length > 0 ? (

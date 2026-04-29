@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, ReactNode, useMemo } from 'react'
 
 export type CartItem = {
   product_id: string
@@ -104,21 +104,28 @@ export function CartProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  // ตัวแปรสำหรับส่งไปหน้าชำระเงิน (เฉพาะที่ถูกเลือก)
-  const checkoutItems = cart.filter((item) => selectedKeys.includes(getItemKey(item.product_id, item.size)))
-  const checkoutTotal = checkoutItems.reduce((total, item) => total + item.price * item.quantity, 0)
+  // ใช้ useMemo เพื่อป้องกันคอมโพเนนต์อื่น Re-render รัวๆ โดยไม่จำเป็น
+  const checkoutItems = useMemo(() => 
+    cart.filter((item) => selectedKeys.includes(getItemKey(item.product_id, item.size))),
+  [cart, selectedKeys])
 
-  // ล้างตะกร้าเฉพาะชิ้นที่ถูกซื้อไปแล้ว
+  const checkoutTotal = useMemo(() => 
+    checkoutItems.reduce((total, item) => total + item.price * item.quantity, 0),
+  [checkoutItems])
+
   const clearPurchasedItems = () => {
     setCart((prevCart) => prevCart.filter((item) => !selectedKeys.includes(getItemKey(item.product_id, item.size))))
     setSelectedKeys([])
   }
 
+  // มัดรวมค่าทั้งหมดด้วย useMemo ก่อนส่งออก
+  const contextValue = useMemo(() => ({
+    cart, addToCart, removeFromCart, updateQuantity, 
+    selectedKeys, toggleSelection, toggleAll, checkoutItems, checkoutTotal, clearPurchasedItems
+  }), [cart, selectedKeys, checkoutItems, checkoutTotal])
+
   return (
-    <CartContext.Provider value={{ 
-      cart, addToCart, removeFromCart, updateQuantity, 
-      selectedKeys, toggleSelection, toggleAll, checkoutItems, checkoutTotal, clearPurchasedItems 
-    }}>
+    <CartContext.Provider value={contextValue}>
       {children}
     </CartContext.Provider>
   )
