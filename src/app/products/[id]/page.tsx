@@ -21,6 +21,7 @@ type Product = {
   size_info: string | null
   long_sleeve_price: number
   colors: string | null // รองรับหลายสี
+  is_preorder: boolean
 }
 
 export default function ProductDetailPage() {
