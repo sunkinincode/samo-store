@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { createClient } from '@/utils/supabase/client'
-import { ShoppingBag, LogOut, Package, Receipt } from 'lucide-react'
+import { ShoppingBag, LogOut, Receipt } from 'lucide-react'
 import { logout } from '@/app/actions/auth'
 import { useEffect, useState, useMemo } from 'react'
 import { User } from '@supabase/supabase-js'
@@ -31,14 +31,23 @@ export default function Navbar() {
     })
 
     return () => subscription.unsubscribe()
-  }, []) // ✅ สำคัญมาก: เอา supabase.auth ออกให้เหลือแค่วงเล็บเปล่า [] เพื่อหยุดการ Re-render วนลูป
+  }, [])
+
+  // ✅ ฟังก์ชันยืนยันก่อนออกจากระบบ
+  const handleLogoutClick = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (window.confirm('คุณต้องการออกจากระบบใช่หรือไม่?')) {
+      await logout()
+    }
+  }
 
   return (
-    <nav className="sticky top-0 z-50 bg-white border-b border-gray-100 shadow-sm">
+    <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-100 shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
+          {/* ✅ แก้ไข: เปลี่ยนจากไอคอนเป็น logo.svg */}
           <Link href="/" className="flex items-center gap-2">
-            <Package className="w-6 h-6 text-gray-900" />
+            <img src="/logo.svg" alt="Samo Store Logo" className="w-8 h-8 object-contain" />
             <span className="font-bold text-xl tracking-tight text-gray-900">Samo Store</span>
           </Link>
 
@@ -46,7 +55,6 @@ export default function Navbar() {
             {user ? (
               <div className="flex items-center">
                 
-                {/* 🛒 โซนเครื่องมือใช้งาน (ประวัติสั่งซื้อ & ตะกร้า) */}
                 <div className="flex items-center gap-2 sm:gap-4">
                   <Link 
                     href="/orders" 
@@ -72,9 +80,9 @@ export default function Navbar() {
                   </Link>
                 </div>
 
-                {/* 🚪 โซนออกจากระบบ (มีเส้นคั่นและเว้นระยะห่าง เพื่อกันกดลั่น) */}
                 <div className="flex items-center ml-3 pl-3 sm:ml-4 sm:pl-4 border-l-2 border-gray-100">
-                  <form action={logout}>
+                  {/* ✅ แก้ไข: เพิ่ม onSubmit เพื่อเรียกใช้หน้า confirm */}
+                  <form onSubmit={handleLogoutClick}>
                     <button 
                       type="submit" 
                       className="flex items-center gap-2 text-sm font-medium text-gray-400 hover:text-red-500 p-2 rounded-lg transition-colors group"

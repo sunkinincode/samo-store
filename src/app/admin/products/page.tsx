@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/utils/supabase/client'
-import { Loader2, Plus, PackageOpen, Image as ImageIcon, Save, Trash2, X, Ruler, Pencil, Palette, Layers } from 'lucide-react'
+import { Loader2, Plus, PackageOpen, Image as ImageIcon, Save, Trash2, X, Ruler, Pencil, Palette, Layers, Clock } from 'lucide-react'
 import clsx from 'clsx'
 
 type SetItem = {
@@ -25,6 +25,7 @@ type Product = {
   colors: string | null
   is_set: boolean
   set_items: SetItem[] | null
+  is_preorder: boolean // ✅ เพิ่ม type รองรับระบบ Pre-order
 }
 
 export default function AdminProductsPage() {
@@ -40,15 +41,16 @@ export default function AdminProductsPage() {
     description: '',
     price: '',
     stock_quantity: '',
-    category: 'shirt', // หมวดหมู่หลัก
+    category: 'shirt',
     size_info: '',
     long_sleeve_price: '',
     colors: ''
   })
   
-  // State สำหรับฟีเจอร์จัดเซต
+  // State สำหรับฟีเจอร์จัดเซต และพรีออร์เดอร์
   const [isSet, setIsSet] = useState(false)
   const [setItems, setSetItems] = useState<SetItem[]>([])
+  const [isPreorder, setIsPreorder] = useState(false) // ✅ State ระบบพรีออร์เดอร์
 
   const [imageFiles, setImageFiles] = useState<File[]>([])
   const [existingImages, setExistingImages] = useState<string[]>([])
@@ -75,6 +77,7 @@ export default function AdminProductsPage() {
     setFormData({ name: '', description: '', price: '', stock_quantity: '', category: 'shirt', size_info: '', long_sleeve_price: '', colors: '' })
     setIsSet(false)
     setSetItems([])
+    setIsPreorder(false) // รีเซ็ตพรีออร์เดอร์
     setImageFiles([])
     setExistingImages([])
   }
@@ -93,6 +96,7 @@ export default function AdminProductsPage() {
     })
     setIsSet(product.is_set || false)
     setSetItems(product.set_items || [])
+    setIsPreorder(product.is_preorder || false) // ดึงค่าพรีออร์เดอร์เดิมมา
     
     const prevImages = product.image_urls || (product.image_url ? [product.image_url] : [])
     setExistingImages(prevImages)
@@ -118,7 +122,6 @@ export default function AdminProductsPage() {
     setExistingImages(prev => prev.filter((_, idx) => idx !== indexToRemove))
   }
 
-  // --- ฟังก์ชันจัดการรายการในเซต ---
   const addSetItem = () => {
     setSetItems([...setItems, { id: Date.now().toString(), label: `สินค้าชิ้นที่ ${setItems.length + 1}`, category: 'shirt' }])
   }
@@ -153,7 +156,6 @@ export default function AdminProductsPage() {
         }
       }
 
-      // ตรวจสอบว่าในเซตมีเสื้อหรือไม่ (เพื่อบันทึกราคาแขนยาว)
       const hasShirtInSet = isSet && setItems.some(item => item.category === 'shirt')
       const requiresSizesColors = formData.category === 'shirt' || hasShirtInSet || (isSet && setItems.some(item => item.category === 'bag'))
 
@@ -161,7 +163,8 @@ export default function AdminProductsPage() {
         name: formData.name,
         description: formData.description,
         price: Number(formData.price),
-        stock_quantity: Number(formData.stock_quantity),
+        // ✅ ถ้าพรีออร์เดอร์ ให้สต็อกเป็น 0 ไปเลย หรือใช้ค่าเดิม
+        stock_quantity: isPreorder ? 0 : Number(formData.stock_quantity),
         category: formData.category,
         size_info: requiresSizesColors && formData.size_info ? formData.size_info.trim() : null,
         long_sleeve_price: (formData.category === 'shirt' || hasShirtInSet) ? Number(formData.long_sleeve_price || 0) : 0,
@@ -169,7 +172,8 @@ export default function AdminProductsPage() {
         image_urls: finalImageUrls,
         image_url: finalImageUrls.length > 0 ? finalImageUrls[0] : null,
         is_set: isSet,
-        set_items: isSet ? setItems : null
+        set_items: isSet ? setItems : null,
+        is_preorder: isPreorder // ✅ ส่งค่าพรีออร์เดอร์ไปฐานข้อมูล
       }
 
       if (editingId) {
@@ -219,13 +223,12 @@ export default function AdminProductsPage() {
           </h2>
           <form onSubmit={handleSubmit} className="space-y-6">
             
-            {/* โหมดจัดเซต Toggle */}
             <div className="bg-purple-50 border-2 border-purple-100 rounded-2xl p-4 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="bg-purple-100 p-2 rounded-xl text-purple-700"><Layers className="w-5 h-5" /></div>
                 <div>
                   <h3 className="font-bold text-purple-900">เปิดใช้งาน "โหมดจัดเซต" (Bundle)</h3>
-                  <p className="text-sm text-purple-700 mt-0.5">ขายสินค้าหลายชิ้นรวมกันในราคาเดียว (เช่น เสื้อ 2 ตัว, เสื้อ+กระเป๋า)</p>
+                  <p className="text-sm text-purple-700 mt-0.5">ขายสินค้าหลายชิ้นรวมกันในราคาเดียว</p>
                 </div>
               </div>
               <label className="relative inline-flex items-center cursor-pointer">
@@ -234,7 +237,6 @@ export default function AdminProductsPage() {
               </label>
             </div>
 
-            {/* ส่วนจัดเรียงสินค้าในเซต (แสดงเฉพาะเมื่อเปิดโหมดเซต) */}
             {isSet && (
               <div className="bg-gray-50 border border-gray-200 p-6 rounded-2xl animate-in fade-in slide-in-from-top-2">
                 <h3 className="font-bold text-gray-900 mb-4 text-sm uppercase tracking-wider">รายการของในเซต</h3>
@@ -274,20 +276,47 @@ export default function AdminProductsPage() {
                   <label className="block text-sm font-semibold text-gray-700 mb-1.5">{isSet ? 'ชื่อเซตสินค้า' : 'ชื่อสินค้า'}</label>
                   <input required type="text" name="name" value={formData.name} onChange={handleInputChange} className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900 outline-none transition-all" placeholder={isSet ? "เช่น เซตเสื้อคู่ 2 ตัว" : "เช่น เสื้อสโมสร รุ่น 2026"} />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-1.5">ราคาสุทธิ (บาท)</label>
                     <input required type="number" name="price" value={formData.price} onChange={handleInputChange} className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900 outline-none transition-all" placeholder="0" />
                   </div>
+
+                  {/* ✅ ส่วนการจัดการสต็อก & พรีออร์เดอร์ */}
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">{isSet ? 'จำนวนเซตที่มี' : 'สต็อก'}</label>
-                    <input required type="number" name="stock_quantity" value={formData.stock_quantity} onChange={handleInputChange} className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900 outline-none transition-all" placeholder="100" />
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className={clsx("block text-sm font-semibold", isPreorder ? "text-gray-400" : "text-gray-700")}>
+                        {isSet ? 'จำนวนเซตที่มี' : 'สต็อก'}
+                      </label>
+                      <label className="flex items-center gap-1.5 cursor-pointer group">
+                        <span className={clsx("text-xs font-bold transition-colors", isPreorder ? "text-green-600" : "text-gray-400 group-hover:text-gray-600")}>
+                          พรีออร์เดอร์
+                        </span>
+                        <div className="relative inline-flex items-center">
+                          <input type="checkbox" checked={isPreorder} onChange={(e) => setIsPreorder(e.target.checked)} className="sr-only peer" />
+                          <div className="w-8 h-4 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-green-500"></div>
+                        </div>
+                      </label>
+                    </div>
+                    <input 
+                      required={!isPreorder} 
+                      disabled={isPreorder} 
+                      type="number" 
+                      name="stock_quantity" 
+                      value={isPreorder ? '' : formData.stock_quantity} 
+                      onChange={handleInputChange} 
+                      className={clsx(
+                        "w-full px-4 py-2.5 rounded-xl outline-none transition-all", 
+                        isPreorder ? "bg-green-50 border-green-100 text-green-600 font-bold placeholder-green-400 cursor-not-allowed" : "bg-gray-50 border border-gray-200 focus:ring-2 focus:ring-gray-900"
+                      )} 
+                      placeholder={isPreorder ? "เปิดรับพรีออร์เดอร์" : "100"} 
+                    />
                   </div>
                 </div>
                 
-                {/* หมวดหมู่หลัก (ถ้าจัดเซต อาจจะเลือกให้ตรงกับของหลักในเซต) */}
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">หมวดหมู่หลัก (สำหรับการกรองหน้าเว็บ)</label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">หมวดหมู่หลัก</label>
                   <select name="category" value={formData.category} onChange={handleInputChange} className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900 outline-none transition-all">
                     <option value="shirt">หมวดหมู่เสื้อ</option>
                     <option value="bag">หมวดหมู่กระเป๋า</option>
@@ -295,7 +324,6 @@ export default function AdminProductsPage() {
                   </select>
                 </div>
 
-                {/* ตัวเลือกไซซ์ สี แขนยาว */}
                 <div className="space-y-4 border border-gray-100 p-4 bg-gray-50 rounded-2xl">
                   {isSet && <p className="text-xs font-bold text-purple-600 bg-purple-100 p-2 rounded-lg mb-2">ตัวเลือกด้านล่างจะถูกนำไปใช้กับ "ของทุกชิ้นในเซต" โดยอัตโนมัติ</p>}
                   
@@ -389,9 +417,17 @@ export default function AdminProductsPage() {
                     <span className="font-bold text-gray-900 text-lg">฿{product.price}</span>
                   </td>
                   <td className="px-6 py-4">
-                    <div className="flex items-center gap-2">
-                      <input type="number" value={product.stock_quantity} onChange={(e) => handleStockChange(product.id, Number(e.target.value))} className={clsx("w-20 px-2 py-1.5 border-2 rounded-xl font-bold outline-none transition-all focus:border-gray-900 text-sm", product.stock_quantity <= 0 ? "border-red-100 bg-red-50 text-red-600" : "border-gray-100 text-gray-900")} />
-                    </div>
+                    {/* ✅ แสดงป้าย Pre-order หรือ ช่องแก้สต็อกตามสถานะ */}
+                    {product.is_preorder ? (
+                      <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-50 text-green-700 rounded-xl border border-green-100">
+                        <Clock className="w-4 h-4" />
+                        <span className="text-xs font-bold uppercase tracking-wider">Pre-order</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <input type="number" value={product.stock_quantity} onChange={(e) => handleStockChange(product.id, Number(e.target.value))} className={clsx("w-20 px-2 py-1.5 border-2 rounded-xl font-bold outline-none transition-all focus:border-gray-900 text-sm", product.stock_quantity <= 0 ? "border-red-100 bg-red-50 text-red-600" : "border-gray-100 text-gray-900")} />
+                      </div>
+                    )}
                   </td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex justify-end gap-2">

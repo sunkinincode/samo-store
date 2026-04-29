@@ -151,7 +151,7 @@ export default function ProductDetailPage() {
     </div>
   )
 
-  const isOutOfStock = product.stock_quantity <= 0
+  const isOutOfStock = !product.is_preorder && product.stock_quantity <= 0
   const isShirt = product.category === 'shirt'
   const isReadyToBuy = !isOutOfStock && 
                        (availableSizes.length === 0 || selectedSize) && 
