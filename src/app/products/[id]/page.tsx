@@ -116,18 +116,25 @@ export default function ProductDetailPage() {
       finalSizeText = finalSizeText ? `${finalSizeText} - สี${selectedColor}` : `สี${selectedColor}`
     }
 
-    addToCart({
-      product_id: product.id,
-      name: product.name,
-      price: finalUnitPrice,
-      quantity: quantity,
-      image_url: allImages[0] || '', // ใช้รูปแรกเป็นรูปในตะกร้า
-      size: finalSizeText || undefined
-    })
-
     if (shouldRedirectToCheckout) {
-      router.push('/checkout') 
+      // ✅ วิธีแก้บั๊กซื้อเลย: ส่งข้อมูลเฉพาะชิ้นนี้ผ่าน URL ไปที่หน้า Checkout
+      const params = new URLSearchParams({
+        direct: 'true',
+        id: product.id,
+        qty: quantity.toString(),
+        size: finalSizeText || '',
+        ls: isLongSleeve.toString() // ส่งค่าแขนยาวไปคำนวณราคาใหม่ด้วย
+      })
+      router.push(`/checkout?${params.toString()}`)
     } else {
+      addToCart({
+        product_id: product.id,
+        name: product.name,
+        price: finalUnitPrice,
+        quantity: quantity,
+        image_url: allImages[0] || '', // ใช้รูปแรกเป็นรูปในตะกร้า
+        size: finalSizeText || undefined
+      })
       setAddedSuccess(true)
       setTimeout(() => setAddedSuccess(false), 2000)
     }
@@ -160,7 +167,7 @@ export default function ProductDetailPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-12 lg:gap-20 items-start">
           
-          {/* ส่วนแกลลอรีรูปภาพ (Image Slider) - แก้ไขเอา sticky top-24 ออกแล้ว */}
+          {/* ส่วนแกลลอรีรูปภาพ (Image Slider) - ✅ เอา sticky top-24 ออกแก้รูปลอยทับ */}
           <div className="space-y-4">
             {/* รูปหลัก */}
             <div className="aspect-[4/5] md:aspect-square bg-gray-50 rounded-[2.5rem] border border-gray-100 overflow-hidden relative group">

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation' // ✅ เพิ่ม useSearchParams
 import Navbar from '@/components/Navbar'
 import { useCart } from '@/context/CartContext'
 import { createClient } from '@/utils/supabase/client'
@@ -9,10 +9,15 @@ import { Loader2, AlertCircle, Upload, Clock, CheckCircle2 } from 'lucide-react'
 import { processCheckout } from '@/app/actions/checkout'
 
 export default function CheckoutPage() {
+  const searchParams = useSearchParams() // ✅ นำมารับค่าจาก URL
   const { checkoutItems, checkoutTotal, clearPurchasedItems } = useCart()
   const router = useRouter()
   const supabase = createClient()
   const formRef = useRef<HTMLFormElement>(null)
+
+  // ✅ State สำหรับเก็บข้อมูลสินค้าที่จะแสดงและยอดรวม (แยกจาก Context)
+  const [displayItems, setDisplayItems] = useState<any[]>([])
+  const [localTotal, setLocalTotal] = useState(0)
 
   const [promptpayPhone, setPromptpayPhone] = useState<string>('')
   const [loading, setLoading] = useState(true)
@@ -27,7 +32,8 @@ export default function CheckoutPage() {
   const [countdown, setCountdown] = useState(5)
 
   useEffect(() => {
-    const fetchSettings = async () => {
+    const fetchSettingsAndProduct = async () => {
+      // 1. ตรวจสอบสถานะร้านค้าและเบอร์ PromptPay
       const { data } = await supabase.from('store_settings').select('promptpay_phone, sale_start, sale_end').eq('id', 1).single()
       if (data) {
         if (data.promptpay_phone) setPromptpayPhone(data.promptpay_phone)
@@ -43,12 +49,44 @@ export default function CheckoutPage() {
           setStoreStatusMsg('หมดเวลารอบการสั่งซื้อแล้ว')
         }
       }
+
+      // 2. ✅ ตรวจสอบว่าเป็น "ซื้อเลย" (Direct) หรือมาจาก "ตะกร้า"
+      const isDirect = searchParams.get('direct') === 'true'
+
+      if (isDirect) {
+        // กรณีซื้อชิ้นเดียว ให้ดึงข้อมูลมาใหม่เพื่อความปลอดภัยในการคำนวณราคา
+        const productId = searchParams.get('id')
+        const qty = parseInt(searchParams.get('qty') || '1')
+        const size = searchParams.get('size') || ''
+        const isLongSleeve = searchParams.get('ls') === 'true'
+
+        if (productId) {
+          const { data: product } = await supabase.from('products').select('*').eq('id', productId).single()
+          if (product) {
+            const finalPrice = product.price + (isLongSleeve ? (product.long_sleeve_price || 0) : 0)
+            setDisplayItems([{
+              product_id: product.id,
+              name: product.name,
+              price: finalPrice,
+              quantity: qty,
+              size: size,
+              image_url: product.image_url
+            }])
+            setLocalTotal(finalPrice * qty)
+          }
+        }
+      } else {
+        // กรณีมาจากตะกร้าปกติ
+        setDisplayItems(checkoutItems)
+        setLocalTotal(checkoutTotal)
+      }
+      
       setLoading(false)
     }
-    fetchSettings()
-  }, [])
+    fetchSettingsAndProduct()
+  }, [searchParams, checkoutItems, checkoutTotal, supabase])
 
-  // --- ระบบนับถอยหลังที่แก้ไขแล้ว ---
+  // --- ระบบนับถอยหลัง ---
   useEffect(() => {
     if (successOrderId && countdown > 0) {
       const timer = setTimeout(() => setCountdown(countdown - 1), 1000)
@@ -60,20 +98,20 @@ export default function CheckoutPage() {
 
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (checkoutItems.length > 0 && !isProcessing && isStoreOpen && !successOrderId) {
+      if (displayItems.length > 0 && !isProcessing && isStoreOpen && !successOrderId) {
         e.preventDefault()
         e.returnValue = ''
       }
     }
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
-  }, [checkoutItems, isProcessing, isStoreOpen, successOrderId])
+  }, [displayItems, isProcessing, isStoreOpen, successOrderId])
 
   useEffect(() => {
-    if (!loading && checkoutItems.length === 0 && !successOrderId) {
+    if (!loading && displayItems.length === 0 && !successOrderId) {
       router.push('/cart')
     }
-  }, [checkoutItems, loading, router, successOrderId])
+  }, [displayItems, loading, router, successOrderId])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -89,18 +127,23 @@ export default function CheckoutPage() {
     setError(null)
 
     const formData = new FormData(e.currentTarget)
-    const result = await processCheckout(formData, checkoutItems, checkoutTotal)
+    
+    // ✅ ส่งข้อมูล displayItems และ localTotal (ที่ถูกคัดกรองแล้ว) ไปเซฟลงฐานข้อมูล
+    const result = await processCheckout(formData, displayItems, localTotal)
 
     if (result.error) {
       setError(result.error)
       setIsProcessing(false)
     } else if (result.success && result.orderId) {
-      clearPurchasedItems() 
+      // ล้างเฉพาะกรณีที่ซื้อจากตะกร้า (ถ้ากดซื้อเลย จะได้ไม่ไปลบของในตะกร้า)
+      if (searchParams.get('direct') !== 'true') {
+        clearPurchasedItems() 
+      }
       setSuccessOrderId(result.orderId) 
     }
   }
 
-  if (loading || (checkoutItems.length === 0 && !successOrderId)) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-gray-900" /></div>
+  if (loading || (displayItems.length === 0 && !successOrderId)) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-gray-900" /></div>
 
   if (successOrderId) {
     return (
@@ -134,7 +177,8 @@ export default function CheckoutPage() {
     )
   }
 
-  const qrUrl = promptpayPhone && promptpayPhone !== '-' ? `https://promptpay.io/${promptpayPhone}/${checkoutTotal}.png` : null
+  // ✅ เปลี่ยน QR Code ให้ใช้ยอดชำระแบบ localTotal เผื่อกรณีซื้อชิ้นเดียว
+  const qrUrl = promptpayPhone && promptpayPhone !== '-' ? `https://promptpay.io/${promptpayPhone}/${localTotal}.png` : null
 
   return (
     <>
@@ -148,7 +192,7 @@ export default function CheckoutPage() {
         <div className="bg-white border border-gray-200 rounded-3xl p-6 sm:p-10 shadow-sm">
           <div className="flex flex-col items-center justify-center mb-10 pb-10 border-b border-gray-100">
             <span className="text-sm font-medium text-gray-500 mb-2">ยอดที่ต้องชำระ</span>
-            <span className="text-4xl font-bold text-gray-900 mb-6">฿{checkoutTotal}</span>
+            <span className="text-4xl font-bold text-gray-900 mb-6">฿{localTotal}</span>
             <div className="bg-gray-50 p-6 rounded-2xl border border-gray-100 flex flex-col items-center">
               {qrUrl ? <img src={qrUrl} alt="PromptPay QR Code" className="w-48 h-48 sm:w-64 sm:h-64 object-contain mb-4 bg-white p-2 rounded-xl border border-gray-200" /> : <div className="w-48 h-48 bg-gray-200 flex items-center justify-center mb-4 rounded-xl"><span className="text-gray-500 text-sm">ยังไม่ได้ตั้งค่าเบอร์ PromptPay</span></div>}
               <p className="text-sm font-medium text-gray-600">สแกนเพื่อชำระเงินผ่านแอปธนาคาร</p>
@@ -162,6 +206,21 @@ export default function CheckoutPage() {
                 <p className="text-sm text-red-700 font-medium">{error}</p>
               </div>
             )}
+
+            {/* ✅ แสดงรายการสินค้าที่จะซื้อให้ดูชัดเจน */}
+            <div className="mb-6 space-y-3">
+              <h3 className="font-bold text-gray-900 text-sm uppercase tracking-wide">รายการสินค้า</h3>
+              {displayItems.map((item, idx) => (
+                <div key={idx} className="flex items-center gap-4 bg-gray-50 p-3 rounded-xl border border-gray-100">
+                  <img src={item.image_url} alt={item.name} className="w-12 h-12 rounded-lg object-cover" />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-gray-900 text-sm truncate">{item.name}</p>
+                    <p className="text-xs text-gray-500 truncate">{item.size || 'ไม่มีไซซ์'} | จำนวน: {item.quantity}</p>
+                  </div>
+                  <div className="font-bold text-sm">฿{item.price * item.quantity}</div>
+                </div>
+              ))}
+            </div>
 
             <div>
               <label className="block text-sm font-bold text-gray-900 mb-3 text-center">อัปโหลดสลิปโอนเงิน</label>
