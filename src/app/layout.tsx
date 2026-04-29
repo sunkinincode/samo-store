@@ -1,9 +1,14 @@
 import type { Metadata } from 'next'
-import { Inter } from 'next/font/google'
-import './globals.css'
-import { CartProvider } from '@/context/CartContext'
+import { Noto_Sans_Thai } from "next/font/google";
+import "./globals.css";
+import { CartProvider } from "@/context/CartContext";
 
-const inter = Inter({ subsets: ['latin'] })
+const notoSansThai = Noto_Sans_Thai({
+  subsets: ["thai", "latin"],
+  weight: ["300", "400", "500", "600", "700"],
+  variable: "--font-noto-sans-thai",
+  display: "swap",
+});
 
 // ✅ แก้ไขตรงนี้: เพิ่มการตั้งค่า icons ให้ชี้ไปที่โลโก้ในโฟลเดอร์ public
 export const metadata: Metadata = {
@@ -21,7 +26,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="th">
-      <body className={inter.className}>
+      <body className={notoSansThai.variable}>
         <CartProvider>
           {children}
         </CartProvider>
