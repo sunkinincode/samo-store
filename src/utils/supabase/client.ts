@@ -1,12 +1,9 @@
 import { createBrowserClient } from '@supabase/ssr'
 
 export function createClient() {
-  // ใส่ || 'https://dummy...' เพื่อกัน Next.js แครชตอน Build บน Cloudflare
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dummy.supabase.co'
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'dummy-key'
+  // ลบ dummy ออก เพื่อให้ใช้ URL ของจริงเท่านั้น
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
-  return createBrowserClient(
-    supabaseUrl,
-    supabaseAnonKey
-  )
+  return createBrowserClient(supabaseUrl, supabaseAnonKey)
 }
