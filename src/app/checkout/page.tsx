@@ -1,21 +1,21 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation' // ✅ เพิ่ม useSearchParams
+import { useEffect, useState, useRef, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Navbar from '@/components/Navbar'
 import { useCart } from '@/context/CartContext'
 import { createClient } from '@/utils/supabase/client'
 import { Loader2, AlertCircle, Upload, Clock, CheckCircle2 } from 'lucide-react'
 import { processCheckout } from '@/app/actions/checkout'
 
-export default function CheckoutPage() {
-  const searchParams = useSearchParams() // ✅ นำมารับค่าจาก URL
+// 1. แยกเนื้อหาเดิมออกมาเป็น Component ย่อย
+function CheckoutContent() {
+  const searchParams = useSearchParams()
   const { checkoutItems, checkoutTotal, clearPurchasedItems } = useCart()
   const router = useRouter()
   const supabase = createClient()
   const formRef = useRef<HTMLFormElement>(null)
 
-  // ✅ State สำหรับเก็บข้อมูลสินค้าที่จะแสดงและยอดรวม (แยกจาก Context)
   const [displayItems, setDisplayItems] = useState<any[]>([])
   const [localTotal, setLocalTotal] = useState(0)
 
@@ -33,7 +33,6 @@ export default function CheckoutPage() {
 
   useEffect(() => {
     const fetchSettingsAndProduct = async () => {
-      // 1. ตรวจสอบสถานะร้านค้าและเบอร์ PromptPay
       const { data } = await supabase.from('store_settings').select('promptpay_phone, sale_start, sale_end').eq('id', 1).single()
       if (data) {
         if (data.promptpay_phone) setPromptpayPhone(data.promptpay_phone)
@@ -50,11 +49,9 @@ export default function CheckoutPage() {
         }
       }
 
-      // 2. ✅ ตรวจสอบว่าเป็น "ซื้อเลย" (Direct) หรือมาจาก "ตะกร้า"
       const isDirect = searchParams.get('direct') === 'true'
 
       if (isDirect) {
-        // กรณีซื้อชิ้นเดียว ให้ดึงข้อมูลมาใหม่เพื่อความปลอดภัยในการคำนวณราคา
         const productId = searchParams.get('id')
         const qty = parseInt(searchParams.get('qty') || '1')
         const size = searchParams.get('size') || ''
@@ -76,7 +73,6 @@ export default function CheckoutPage() {
           }
         }
       } else {
-        // กรณีมาจากตะกร้าปกติ
         setDisplayItems(checkoutItems)
         setLocalTotal(checkoutTotal)
       }
@@ -86,7 +82,6 @@ export default function CheckoutPage() {
     fetchSettingsAndProduct()
   }, [searchParams, checkoutItems, checkoutTotal, supabase])
 
-  // --- ระบบนับถอยหลัง ---
   useEffect(() => {
     if (successOrderId && countdown > 0) {
       const timer = setTimeout(() => setCountdown(countdown - 1), 1000)
@@ -128,14 +123,12 @@ export default function CheckoutPage() {
 
     const formData = new FormData(e.currentTarget)
     
-    // ✅ ส่งข้อมูล displayItems และ localTotal (ที่ถูกคัดกรองแล้ว) ไปเซฟลงฐานข้อมูล
     const result = await processCheckout(formData, displayItems, localTotal)
 
     if (result.error) {
       setError(result.error)
       setIsProcessing(false)
     } else if (result.success && result.orderId) {
-      // ล้างเฉพาะกรณีที่ซื้อจากตะกร้า (ถ้ากดซื้อเลย จะได้ไม่ไปลบของในตะกร้า)
       if (searchParams.get('direct') !== 'true') {
         clearPurchasedItems() 
       }
@@ -177,7 +170,6 @@ export default function CheckoutPage() {
     )
   }
 
-  // ✅ เปลี่ยน QR Code ให้ใช้ยอดชำระแบบ localTotal เผื่อกรณีซื้อชิ้นเดียว
   const qrUrl = promptpayPhone && promptpayPhone !== '-' ? `https://promptpay.io/${promptpayPhone}/${localTotal}.png` : null
 
   return (
@@ -207,7 +199,6 @@ export default function CheckoutPage() {
               </div>
             )}
 
-            {/* ✅ แสดงรายการสินค้าที่จะซื้อให้ดูชัดเจน */}
             <div className="mb-6 space-y-3">
               <h3 className="font-bold text-gray-900 text-sm uppercase tracking-wide">รายการสินค้า</h3>
               {displayItems.map((item, idx) => (
@@ -249,5 +240,15 @@ export default function CheckoutPage() {
         </div>
       </div>
     </>
+  )
+}
+
+// 2. Component หลัก (Default Export) ที่ครอบเนื้อหาด้วย Suspense
+export default function CheckoutPage() {
+  return (
+    // หากมีการดึงข้อมูลระหว่างทางหน้าจอจะแสดงวงกลมโหลดแบบตรงกลางจอ
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-gray-900" /></div>}>
+      <CheckoutContent />
+    </Suspense>
   )
 }
