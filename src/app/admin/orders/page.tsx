@@ -1,6 +1,5 @@
 'use client'
 
-export const dynamic = 'force-dynamic'
 import { useState } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import { Loader2, Search, CheckCircle2, AlertCircle, Package, Receipt } from 'lucide-react'
