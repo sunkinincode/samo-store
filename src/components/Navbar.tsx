@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { createClient } from '@/utils/supabase/client'
-import { ShoppingBag, LogOut, Receipt } from 'lucide-react'
+import { ShoppingBag, LogOut, Receipt, Package } from 'lucide-react' // ✅ นำ Package กลับมา
 import { logout } from '@/app/actions/auth'
 import { useEffect, useState, useMemo } from 'react'
 import { User } from '@supabase/supabase-js'
@@ -33,7 +33,6 @@ export default function Navbar() {
     return () => subscription.unsubscribe()
   }, [])
 
-  // ✅ ฟังก์ชันยืนยันก่อนออกจากระบบ
   const handleLogoutClick = async (e: React.FormEvent) => {
     e.preventDefault()
     if (window.confirm('คุณต้องการออกจากระบบใช่หรือไม่?')) {
@@ -45,9 +44,9 @@ export default function Navbar() {
     <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-100 shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
-          {/* ✅ แก้ไข: เปลี่ยนจากไอคอนเป็น logo.svg */}
+          {/* ✅ นำไอคอนกล่อง (Package) กลับมาใส่แทนที่ logo.svg */}
           <Link href="/" className="flex items-center gap-2">
-            <img src="/logo.svg" alt="Samo Store Logo" className="w-8 h-8 object-contain" />
+            <Package className="w-6 h-6 text-gray-900" />
             <span className="font-bold text-xl tracking-tight text-gray-900">Samo Store</span>
           </Link>
 
@@ -81,7 +80,6 @@ export default function Navbar() {
                 </div>
 
                 <div className="flex items-center ml-3 pl-3 sm:ml-4 sm:pl-4 border-l-2 border-gray-100">
-                  {/* ✅ แก้ไข: เพิ่ม onSubmit เพื่อเรียกใช้หน้า confirm */}
                   <form onSubmit={handleLogoutClick}>
                     <button 
                       type="submit" 

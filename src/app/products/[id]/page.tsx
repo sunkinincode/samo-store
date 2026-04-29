@@ -152,6 +152,7 @@ export default function ProductDetailPage() {
     </div>
   )
 
+  // ✅ แก้ไข: ข้ามการเช็คสต็อกถ้าเป็นพรีออร์เดอร์
   const isOutOfStock = !product.is_preorder && product.stock_quantity <= 0
   const isShirt = product.category === 'shirt'
   const isReadyToBuy = !isOutOfStock && 
@@ -168,7 +169,7 @@ export default function ProductDetailPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-12 lg:gap-20 items-start">
           
-          {/* ส่วนแกลลอรีรูปภาพ (Image Slider) - ✅ เอา sticky top-24 ออกแก้รูปลอยทับ */}
+          {/* ส่วนแกลลอรีรูปภาพ (Image Slider) */}
           <div className="space-y-4">
             {/* รูปหลัก */}
             <div className="aspect-[4/5] md:aspect-square bg-gray-50 rounded-[2.5rem] border border-gray-100 overflow-hidden relative group">
@@ -178,10 +179,17 @@ export default function ProductDetailPage() {
                 <div className="w-full h-full flex items-center justify-center text-gray-300 text-lg font-medium">ไม่มีรูปภาพ</div>
               )}
               
-              {/* ป้าย Sold Out */}
+              {/* ป้าย Sold Out (จะไม่แสดงถ้าเป็นพรีออร์เดอร์) */}
               {isOutOfStock && (
                 <div className="absolute inset-0 bg-white/60 backdrop-blur-sm flex items-center justify-center z-10">
                   <span className="bg-red-500 text-white px-8 py-3 rounded-full text-xl font-black tracking-widest uppercase transform -rotate-12 shadow-lg">Sold Out</span>
+                </div>
+              )}
+              
+              {/* ✅ เพิ่มป้าย Pre-Order ตรงมุมรูปให้ดูชัดเจนขึ้น */}
+              {!isOutOfStock && product.is_preorder && (
+                <div className="absolute top-4 right-4 z-10">
+                  <span className="bg-green-500 text-white px-4 py-1.5 rounded-full text-sm font-bold uppercase tracking-widest shadow-md">Pre-Order</span>
                 </div>
               )}
 
@@ -338,7 +346,8 @@ export default function ProductDetailPage() {
               <div className="flex items-center justify-between text-sm font-bold text-gray-500 mb-6">
                 <span>สถานะสินค้า</span>
                 <span className={clsx(isOutOfStock ? "text-red-500" : "text-green-600")}>
-                  {isOutOfStock ? 'สินค้าหมด' : `มีสินค้า (${product.stock_quantity} ชิ้น)`}
+                  {/* ✅ แก้ไข: แสดงคำว่าเปิดรับพรีออร์เดอร์ ถ้าสินค้าเป็นแบบพรีออร์เดอร์ */}
+                  {isOutOfStock ? 'สินค้าหมด' : product.is_preorder ? 'เปิดรับพรีออร์เดอร์' : `มีสินค้า (${product.stock_quantity} ชิ้น)`}
                 </span>
               </div>
 

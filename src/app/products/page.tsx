@@ -35,14 +35,12 @@ export default async function ProductsPage() {
     isStoreClosed = true
   }
 
-  // ดึงชื่อผู้ใช้มาแสดง (ถ้าไม่มีชื่อเต็มจาก Google ให้ใช้อีเมลแทน)
   const displayName = user ? (user.user_metadata?.full_name || user.user_metadata?.name || user.email) : null;
 
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
       
-      {/* ส่วนหัวแสดงคำกล่าวต้อนรับ (แสดงเฉพาะตอนที่ผู้ใช้ล็อกอินแล้ว) */}
       {user && (
         <header className="bg-white border-b border-gray-100 py-6 px-4 shadow-sm animate-in fade-in slide-in-from-top-2 duration-500">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -80,22 +78,23 @@ export default async function ProductsPage() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {products?.map((product) => {
-            const isOutOfStock = product.stock_quantity <= 0
+            // ✅ แก้ไข: ถ้าเปิดพรีออร์เดอร์ไว้ จะไม่มีวัน Sold Out
+            const isOutOfStock = !product.is_preorder && product.stock_quantity <= 0
 
             return (
               <div key={product.id} className="bg-white rounded-3xl border border-gray-100 overflow-hidden hover:shadow-lg transition-all duration-300 group flex flex-col">
                 
-                {/* รูปสินค้า: ถ้าล็อกอินแล้วและร้านเปิด ถึงจะกดเข้าไปดูได้ */}
                 {user && !isStoreClosed ? (
                   <Link href={`/products/${product.id}`} className="aspect-square bg-gray-50 relative overflow-hidden block">
                     <ProductImage product={product} />
-                    <ProductBadges isOutOfStock={isOutOfStock} isStoreClosed={isStoreClosed} />
+                    {/* ✅ ส่งค่า isPreorder ไปให้ ProductBadges */}
+                    <ProductBadges isOutOfStock={isOutOfStock} isStoreClosed={isStoreClosed} isPreorder={product.is_preorder} />
                   </Link>
                 ) : (
                   <div className="aspect-square bg-gray-50 relative overflow-hidden block cursor-pointer" 
                        title={!user ? "กรุณาเข้าสู่ระบบ" : isStoreClosed ? "ยังไม่เปิดรับออร์เดอร์" : ""}>
                     <ProductImage product={product} />
-                    <ProductBadges isOutOfStock={isOutOfStock} isStoreClosed={isStoreClosed} />
+                    <ProductBadges isOutOfStock={isOutOfStock} isStoreClosed={isStoreClosed} isPreorder={product.is_preorder} />
                   </div>
                 )}
 
@@ -108,7 +107,6 @@ export default async function ProductsPage() {
                   <div className="flex items-center justify-between mt-auto pt-4 border-t border-gray-50">
                     <span className="text-2xl font-black text-gray-900">฿{product.price}</span>
                     
-                    {/* ปุ่ม Action แบบสลับแท็ก (Conditional Rendering) */}
                     {!user ? (
                       <Link href="/login?error=กรุณาเข้าสู่ระบบก่อนสั่งซื้อสินค้า" className="p-3 rounded-2xl bg-gray-100 text-gray-900 hover:bg-gray-900 hover:text-white shadow-sm transition-all">
                         <ShoppingCart className="w-5 h-5" />
@@ -141,8 +139,6 @@ export default async function ProductsPage() {
   )
 }
 
-// --- Component ย่อยเพื่อความสะอาดของโค้ด (ทำงานบน Server เช่นกัน) ---
-
 function ProductImage({ product }: { product: any }) {
   if (product.image_url) {
     return <img src={product.image_url} alt={product.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
@@ -150,9 +146,13 @@ function ProductImage({ product }: { product: any }) {
   return <div className="w-full h-full flex items-center justify-center text-gray-300 font-medium">ไม่มีรูป</div>
 }
 
-function ProductBadges({ isOutOfStock, isStoreClosed }: { isOutOfStock: boolean, isStoreClosed: boolean }) {
+// ✅ แก้ไข Component ป้ายกำกับ เพิ่มป้าย Pre-order
+function ProductBadges({ isOutOfStock, isStoreClosed, isPreorder }: { isOutOfStock: boolean, isStoreClosed: boolean, isPreorder: boolean }) {
   if (isOutOfStock) {
     return <div className="absolute top-4 right-4 bg-red-500 text-white px-3 py-1 rounded-full text-xs font-bold uppercase shadow-sm">Sold Out</div>
+  }
+  if (isPreorder) {
+    return <div className="absolute top-4 right-4 bg-green-500 text-white px-3 py-1 rounded-full text-xs font-bold uppercase shadow-sm">Pre-Order</div>
   }
   if (isStoreClosed) {
     return <div className="absolute top-4 right-4 bg-yellow-500 text-white px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 shadow-sm"><Clock className="w-3 h-3" /> ยังไม่เปิดขาย</div>
