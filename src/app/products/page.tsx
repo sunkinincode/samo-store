@@ -4,6 +4,7 @@ import Navbar from '@/components/Navbar'
 import Link from 'next/link'
 import { createClient } from '@/utils/supabase/server'
 import { Package, Clock, Megaphone, ShoppingCart } from 'lucide-react'
+import ProductImageCarousel from '@/components/ProductImageCarousel' // ✅ Import Component ใหม่
 
 export default async function ProductsPage() {
   const supabase = await createClient()
@@ -77,22 +78,27 @@ export default async function ProductsPage() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {products?.map((product) => {
-            // ✅ แก้ไข: ถ้าเปิดพรีออร์เดอร์ไว้ จะไม่มีวัน Sold Out
             const isOutOfStock = !product.is_preorder && product.stock_quantity <= 0
+
+            // ✅ รวบรวมรูปภาพทั้งหมด (ทั้งแบบ array และรูปเดี่ยว)
+            const allImages = product.image_urls?.length > 0 
+              ? product.image_urls 
+              : (product.image_url ? [product.image_url] : [])
 
             return (
               <div key={product.id} className="bg-white rounded-3xl border border-gray-100 overflow-hidden hover:shadow-lg transition-all duration-300 group flex flex-col">
                 
                 {user && !isStoreClosed ? (
                   <Link href={`/products/${product.id}`} className="aspect-square bg-gray-50 relative overflow-hidden block">
-                    <ProductImage product={product} />
-                    {/* ✅ ส่งค่า isPreorder ไปให้ ProductBadges */}
+                    {/* ✅ เรียกใช้ Carousel ใหม่ */}
+                    <ProductImageCarousel images={allImages} alt={product.name} />
                     <ProductBadges isOutOfStock={isOutOfStock} isStoreClosed={isStoreClosed} isPreorder={product.is_preorder} />
                   </Link>
                 ) : (
                   <div className="aspect-square bg-gray-50 relative overflow-hidden block cursor-pointer" 
                        title={!user ? "กรุณาเข้าสู่ระบบ" : isStoreClosed ? "ยังไม่เปิดรับออร์เดอร์" : ""}>
-                    <ProductImage product={product} />
+                    {/* ✅ เรียกใช้ Carousel ใหม่ */}
+                    <ProductImageCarousel images={allImages} alt={product.name} />
                     <ProductBadges isOutOfStock={isOutOfStock} isStoreClosed={isStoreClosed} isPreorder={product.is_preorder} />
                   </div>
                 )}
@@ -138,23 +144,16 @@ export default async function ProductsPage() {
   )
 }
 
-function ProductImage({ product }: { product: any }) {
-  if (product.image_url) {
-    return <img src={product.image_url} alt={product.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
-  }
-  return <div className="w-full h-full flex items-center justify-center text-gray-300 font-medium">ไม่มีรูป</div>
-}
-
-// ✅ แก้ไข Component ป้ายกำกับ เพิ่มป้าย Pre-order
+// ฟังก์ชันป้ายกำกับสินค้า
 function ProductBadges({ isOutOfStock, isStoreClosed, isPreorder }: { isOutOfStock: boolean, isStoreClosed: boolean, isPreorder: boolean }) {
   if (isOutOfStock) {
-    return <div className="absolute top-4 right-4 bg-red-500 text-white px-3 py-1 rounded-full text-xs font-bold uppercase shadow-sm">Sold Out</div>
+    return <div className="absolute top-4 right-4 z-20 bg-red-500 text-white px-3 py-1 rounded-full text-xs font-bold uppercase shadow-sm">Sold Out</div>
   }
   if (isPreorder) {
-    return <div className="absolute top-4 right-4 bg-green-500 text-white px-3 py-1 rounded-full text-xs font-bold uppercase shadow-sm">Pre-Order</div>
+    return <div className="absolute top-4 right-4 z-20 bg-green-500 text-white px-3 py-1 rounded-full text-xs font-bold uppercase shadow-sm">Pre-Order</div>
   }
   if (isStoreClosed) {
-    return <div className="absolute top-4 right-4 bg-yellow-500 text-white px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 shadow-sm"><Clock className="w-3 h-3" /> ยังไม่เปิดขาย</div>
+    return <div className="absolute top-4 right-4 z-20 bg-yellow-500 text-white px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 shadow-sm"><Clock className="w-3 h-3" /> ยังไม่เปิดขาย</div>
   }
   return null
 }
