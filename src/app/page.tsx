@@ -27,7 +27,7 @@ export default async function Home() {
         <div className="relative z-10 max-w-4xl mx-auto text-center space-y-8 bg-white/40 backdrop-blur-xl p-12 sm:p-16 rounded-[3rem] border border-white/60 shadow-2xl">
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-green-50/80 border border-green-200 text-green-700 font-bold text-sm mb-4 backdrop-blur-md">
             <Sparkles className="w-4 h-4" />
-            <span>Welcome to Science Student Union</span>
+            <span>Welcome to Science Student Society</span>
           </div>
           
           <h1 className="text-5xl sm:text-6xl md:text-7xl font-black text-gray-900 tracking-tight leading-tight">
@@ -36,7 +36,6 @@ export default async function Home() {
           
           <p className="text-xl sm:text-2xl text-gray-600 max-w-2xl mx-auto font-medium leading-relaxed">
             ระบบสั่งซื้อสินค้าที่ระลึก สโมสรนักศึกษาคณะวิทยาศาสตร์ <br className="hidden sm:block" />
-            <span className="text-gray-500 text-lg">Low Carbon • High Charity • Green Shopping</span>
           </p>
 
           <div className="pt-6">
@@ -97,7 +96,7 @@ export default async function Home() {
             <h2 className="text-3xl sm:text-4xl font-black text-gray-900 flex items-center gap-3">
               <Package className="w-8 h-8 text-green-600" /> สินค้ามาใหม่ล่าสุด
             </h2>
-            <p className="text-gray-500 mt-2 text-lg">อย่าพลาดคอลเลกชันใหม่จากสโมสร</p>
+            <p className="text-gray-500 mt-2 text-lg">อย่าพลาดคอลเลกชันใหม่จากสโมสรฯ</p>
           </div>
           <Link href="/products" className="text-sm font-bold text-green-600 hover:text-green-700 hover:underline transition-colors flex items-center gap-1">
             ดูสินค้าทั้งหมด <ArrowRight className="w-4 h-4" />
@@ -145,7 +144,7 @@ export default async function Home() {
       <footer className="border-t border-gray-200 bg-white py-12 text-center text-gray-500 text-sm font-medium">
         <div className="max-w-7xl mx-auto px-4 flex flex-col items-center gap-2">
           <Leaf className="w-6 h-6 text-green-500 mb-2" />
-          <p>© 2026 Science Student Union, PSU Hatyai.</p>
+          <p>© 2026 Science Student Society, PSU Hatyai.</p>
           <p>Powered by Next.js & Supabase</p>
         </div>
       </footer>
