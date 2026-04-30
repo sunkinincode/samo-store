@@ -5,9 +5,16 @@ import { useParams, useRouter } from 'next/navigation'
 import Navbar from '@/components/Navbar'
 import { createClient } from '@/utils/supabase/client'
 import { useCart } from '@/context/CartContext'
-import { Loader2, ArrowLeft, ShoppingBag, Ruler, AlertCircle, Minus, Plus, CreditCard, CheckCircle2, ChevronLeft, ChevronRight, Palette } from 'lucide-react'
+import { Loader2, ArrowLeft, ShoppingBag, Ruler, AlertCircle, Minus, Plus, CreditCard, CheckCircle2, ChevronLeft, ChevronRight, Palette, Package } from 'lucide-react'
 import Link from 'next/link'
 import clsx from 'clsx'
+
+// ✅ เพิ่ม Type SetItem ให้ Product
+type SetItem = {
+  id: string
+  product_id: string
+  quantity: number
+}
 
 type Product = {
   id: string
@@ -15,13 +22,22 @@ type Product = {
   price: number
   stock_quantity: number
   image_url: string
-  image_urls: string[] | null // รองรับหลายรูป
+  image_urls: string[] | null
   category: string
   description: string
   size_info: string | null
   long_sleeve_price: number
-  colors: string | null // รองรับหลายสี
+  colors: string | null
   is_preorder: boolean
+  is_set: boolean
+  set_items: SetItem[] | null
+}
+
+// ✅ สร้าง Type สำหรับเก็บตัวเลือกของ "แต่ละชิ้น"
+type Selection = {
+  size: string
+  color: string
+  isLongSleeve: boolean
 }
 
 export default function ProductDetailPage() {
@@ -34,97 +50,105 @@ export default function ProductDetailPage() {
   const [product, setProduct] = useState<Product | null>(null)
   const [loading, setLoading] = useState(true)
   
-  // State สำหรับตัวเลือกสินค้า
-  const [selectedSize, setSelectedSize] = useState<string>('')
-  const [selectedColor, setSelectedColor] = useState<string>('')
-  const [quantity, setQuantity] = useState(1)
-  const [isLongSleeve, setIsLongSleeve] = useState(false)
+  // ✅ State แบบ Array สำหรับเก็บตัวเลือกแยกทีละชิ้น
+  const [selections, setSelections] = useState<Selection[]>([])
+  
+  const [quantity, setQuantity] = useState(1) // จำนวนชุดที่จะซื้อ
   const [addedSuccess, setAddedSuccess] = useState(false) 
-
-  // State สำหรับ Image Slider
   const [currentImageIdx, setCurrentImageIdx] = useState(0)
 
   // เตรียมข้อมูลตัวเลือก
   const availableSizes = product?.size_info ? product.size_info.split(',').map(s => s.trim()).filter(s => s.length > 0) : []
   const availableColors = product?.colors ? product.colors.split(',').map(c => c.trim()).filter(c => c.length > 0) : []
   
-  // รวมรูปทั้งหมด (ถ้าระบบเก่ามีแค่ image_url ก็เอามาใช้เป็น array ช่องแรก)
   const allImages = product?.image_urls?.length 
     ? product.image_urls 
     : (product?.image_url ? [product.image_url] : [])
+
+  // ✅ คำนวณจำนวนชิ้นทั้งหมดในเซต (ถ้าไม่ใช่เซตจะเท่ากับ 1)
+  const totalPieces = product?.is_set && product.set_items
+    ? product.set_items.reduce((sum, item) => sum + (item.quantity || 1), 0)
+    : 1
 
   useEffect(() => {
     let channel: ReturnType<typeof supabase.channel>
 
     const fetchProductAndSubscribe = async () => {
-      // 1. ดึงข้อมูลสินค้าเริ่มต้น
       const { data, error } = await supabase.from('products').select('*').eq('id', productId).single()
-      if (data) setProduct(data)
+      if (data) {
+        setProduct(data)
+        // ✅ สร้างกล่องตัวเลือกเปล่าๆ ไว้รอตามจำนวนชิ้น
+        const pieces = data.is_set && data.set_items ? data.set_items.reduce((sum: number, item: any) => sum + (item.quantity || 1), 0) : 1
+        setSelections(Array(pieces).fill({ size: '', color: '', isLongSleeve: false }))
+      }
       setLoading(false)
 
-      // 2. สมัครรับข้อมูล Realtime (เปิดท่อรอฟังการอัปเดตสต๊อก)
       channel = supabase
         .channel(`product-${productId}`)
-        .on(
-          'postgres_changes',
-          { 
-            event: 'UPDATE', 
-            schema: 'public', 
-            table: 'products',
-            filter: `id=eq.${productId}` 
-          },
-          (payload) => {
-            console.log('🔄 สต๊อกอัปเดตแบบเรียลไทม์:', payload.new.stock_quantity)
-            // อัปเดตเฉพาะค่าสต๊อกใน State ทันที
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'products', filter: `id=eq.${productId}` }, (payload) => {
             setProduct((prev) => prev ? { ...prev, stock_quantity: payload.new.stock_quantity } : null)
           }
-        )
-        .subscribe()
+        ).subscribe()
     }
 
     fetchProductAndSubscribe()
-
-    // 3. ปิดท่อการเชื่อมต่อเมื่อผู้ใช้ออกจากหน้านี้ (กันเมมโมรี่บวม)
-    return () => {
-      if (channel) supabase.removeChannel(channel)
-    }
+    return () => { if (channel) supabase.removeChannel(channel) }
   }, [productId, supabase])
 
-  const finalUnitPrice = product ? product.price + (isLongSleeve ? (product.long_sleeve_price || 0) : 0) : 0
+  // ฟังก์ชันอัปเดตตัวเลือกเฉพาะชิ้นนั้นๆ
+  const updateSelection = (index: number, field: keyof Selection, value: string | boolean) => {
+    setSelections(prev => {
+      const updated = [...prev]
+      updated[index] = { ...updated[index], [field]: value }
+      return updated
+    })
+  }
 
-  // ฟังก์ชันเลื่อนรูป
+  // ✅ คำนวณราคาใหม่: ราคาหลัก + (จำนวนชิ้นที่เลือกแขนยาว * ค่าแขนยาว)
+  const sleeveAddonCount = selections.filter(s => s.isLongSleeve).length
+  const finalUnitPrice = product ? product.price + (sleeveAddonCount * (product.long_sleeve_price || 0)) : 0
+
   const nextImage = () => setCurrentImageIdx((prev) => (prev + 1) % allImages.length)
   const prevImage = () => setCurrentImageIdx((prev) => (prev - 1 + allImages.length) % allImages.length)
 
   const handleAction = (shouldRedirectToCheckout: boolean) => {
     if (!product) return
 
-    if (availableSizes.length > 0 && !selectedSize) {
-      alert('กรุณาเลือกไซซ์ก่อนครับ')
+    // ตรวจสอบว่าเลือกครบทุกชิ้นหรือยัง
+    if (availableSizes.length > 0 && selections.some(s => !s.size)) {
+      alert('กรุณาเลือกไซซ์ให้ครบทุกชิ้นครับ')
       return
     }
-    if (availableColors.length > 0 && !selectedColor) {
-      alert('กรุณาเลือกสีก่อนครับ')
+    if (availableColors.length > 0 && selections.some(s => !s.color)) {
+      alert('กรุณาเลือกสีให้ครบทุกชิ้นครับ')
       return
     }
 
-    // รวมข้อความ ไซซ์ แขน และสี เข้าด้วยกัน เพื่อส่งไปให้ตะกร้า
-    let finalSizeText = selectedSize
-    if (product.category === 'shirt') {
-      finalSizeText = `${selectedSize} ${isLongSleeve ? '(แขนยาว)' : '(แขนสั้น)'}`
-    }
-    if (selectedColor) {
-      finalSizeText = finalSizeText ? `${finalSizeText} - สี${selectedColor}` : `สี${selectedColor}`
+    // ✅ รวบรวมข้อความไซซ์ทั้งหมดเพื่อส่งไปหน้าตะกร้า
+    let finalSizeText = ''
+    if (totalPieces === 1) {
+      const s = selections[0]
+      finalSizeText = s.size
+      if (product.category === 'shirt') finalSizeText = `${s.size} ${s.isLongSleeve ? '(แขนยาว)' : '(แขนสั้น)'}`
+      if (s.color) finalSizeText = finalSizeText ? `${finalSizeText} - สี${s.color}` : `สี${s.color}`
+    } else {
+      finalSizeText = selections.map((s, idx) => {
+        let text = s.size || ''
+        if (availableSizes.length > 0 && (product.category === 'shirt' || product.is_set)) {
+          text = text ? `${text} ${s.isLongSleeve ? '(แขนยาว)' : '(แขนสั้น)'}` : `${s.isLongSleeve ? '(แขนยาว)' : '(แขนสั้น)'}`
+        }
+        if (s.color) text = text ? `${text} - สี${s.color}` : `สี${s.color}`
+        return `ชิ้นที่ ${idx + 1}: ${text || 'ค่าเริ่มต้น'}`
+      }).join(' | ')
     }
 
     if (shouldRedirectToCheckout) {
-      // ✅ วิธีแก้บั๊กซื้อเลย: ส่งข้อมูลเฉพาะชิ้นนี้ผ่าน URL ไปที่หน้า Checkout
       const params = new URLSearchParams({
         direct: 'true',
         id: product.id,
         qty: quantity.toString(),
         size: finalSizeText || '',
-        ls: isLongSleeve.toString() // ส่งค่าแขนยาวไปคำนวณราคาใหม่ด้วย
+        ls: (sleeveAddonCount > 0).toString() // ส่งไปบอกว่ามีแขนยาวเพื่อคิดเงินหน้า checkout (ถ้ามี)
       })
       router.push(`/checkout?${params.toString()}`)
     } else {
@@ -133,7 +157,7 @@ export default function ProductDetailPage() {
         name: product.name,
         price: finalUnitPrice,
         quantity: quantity,
-        image_url: allImages[0] || '', // ใช้รูปแรกเป็นรูปในตะกร้า
+        image_url: allImages[0] || '',
         size: finalSizeText || undefined
       })
       setAddedSuccess(true)
@@ -147,17 +171,18 @@ export default function ProductDetailPage() {
     <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4 text-center">
       <AlertCircle className="w-12 h-12 text-gray-300 mb-4" />
       <h1 className="text-2xl font-bold text-gray-900 mb-2">ไม่พบสินค้านี้</h1>
-      <p className="text-gray-500 mb-6">สินค้าอาจถูกลบออกไปแล้ว หรือลิงก์ไม่ถูกต้อง</p>
       <Link href="/products" className="text-gray-900 font-medium hover:underline flex items-center gap-2"><ArrowLeft className="w-4 h-4"/> กลับไปหน้าสินค้า</Link>
     </div>
   )
 
-  // ✅ แก้ไข: ข้ามการเช็คสต็อกถ้าเป็นพรีออร์เดอร์
   const isOutOfStock = !product.is_preorder && product.stock_quantity <= 0
-  const isShirt = product.category === 'shirt'
-  const isReadyToBuy = !isOutOfStock && 
-                       (availableSizes.length === 0 || selectedSize) && 
-                       (availableColors.length === 0 || selectedColor)
+  const showSleeveOption = product.category === 'shirt' || (product.is_set && availableSizes.length > 0)
+  
+  // ตรวจสอบความพร้อมในการซื้อ
+  const isReadyToBuy = !isOutOfStock && selections.length > 0 && selections.every(s => 
+    (availableSizes.length === 0 || s.size) && 
+    (availableColors.length === 0 || s.color)
+  )
 
   return (
     <div className="min-h-screen bg-white pb-20">
@@ -168,9 +193,8 @@ export default function ProductDetailPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-12 lg:gap-20 items-start">
           
-          {/* ส่วนแกลลอรีรูปภาพ (Image Slider) */}
-          <div className="space-y-4">
-            {/* รูปหลัก */}
+          {/* ส่วนแกลลอรีรูปภาพ */}
+          <div className="space-y-4 md:sticky md:top-24">
             <div className="aspect-[4/5] md:aspect-square bg-gray-50 rounded-[2.5rem] border border-gray-100 overflow-hidden relative group">
               {allImages.length > 0 ? (
                 <img src={allImages[currentImageIdx]} alt={`${product.name} - ${currentImageIdx + 1}`} className="w-full h-full object-cover transition-all duration-500" />
@@ -178,21 +202,18 @@ export default function ProductDetailPage() {
                 <div className="w-full h-full flex items-center justify-center text-gray-300 text-lg font-medium">ไม่มีรูปภาพ</div>
               )}
               
-              {/* ป้าย Sold Out (จะไม่แสดงถ้าเป็นพรีออร์เดอร์) */}
               {isOutOfStock && (
                 <div className="absolute inset-0 bg-white/60 backdrop-blur-sm flex items-center justify-center z-10">
                   <span className="bg-red-500 text-white px-8 py-3 rounded-full text-xl font-black tracking-widest uppercase transform -rotate-12 shadow-lg">Sold Out</span>
                 </div>
               )}
               
-              {/* ✅ เพิ่มป้าย Pre-Order ตรงมุมรูปให้ดูชัดเจนขึ้น */}
               {!isOutOfStock && product.is_preorder && (
                 <div className="absolute top-4 right-4 z-10">
                   <span className="bg-green-500 text-white px-4 py-1.5 rounded-full text-sm font-bold uppercase tracking-widest shadow-md">Pre-Order</span>
                 </div>
               )}
 
-              {/* ปุ่มเลื่อนซ้าย-ขวา (แสดงเฉพาะเมื่อมีมากกว่า 1 รูป) */}
               {allImages.length > 1 && (
                 <>
                   <button onClick={prevImage} className="absolute left-4 top-1/2 -translate-y-1/2 bg-white/80 hover:bg-white text-gray-900 p-3 rounded-full shadow-md backdrop-blur-sm transition-all opacity-0 group-hover:opacity-100"><ChevronLeft className="w-6 h-6" /></button>
@@ -201,18 +222,10 @@ export default function ProductDetailPage() {
               )}
             </div>
 
-            {/* รูปย่อ (Thumbnails) */}
             {allImages.length > 1 && (
               <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
                 {allImages.map((img, idx) => (
-                  <button 
-                    key={idx} 
-                    onClick={() => setCurrentImageIdx(idx)}
-                    className={clsx(
-                      "w-20 h-20 rounded-2xl overflow-hidden shrink-0 border-2 transition-all",
-                      currentImageIdx === idx ? "border-gray-900 shadow-md scale-105" : "border-transparent opacity-60 hover:opacity-100"
-                    )}
-                  >
+                  <button key={idx} onClick={() => setCurrentImageIdx(idx)} className={clsx("w-20 h-20 rounded-2xl overflow-hidden shrink-0 border-2 transition-all", currentImageIdx === idx ? "border-gray-900 shadow-md scale-105" : "border-transparent opacity-60 hover:opacity-100")}>
                     <img src={img} alt={`Thumbnail ${idx}`} className="w-full h-full object-cover" />
                   </button>
                 ))}
@@ -224,7 +237,7 @@ export default function ProductDetailPage() {
           <div className="flex flex-col h-full space-y-8">
             <div>
               <span className="inline-block px-3 py-1 bg-gray-100 text-gray-600 rounded-full text-sm font-bold uppercase tracking-wider mb-4">
-                {product.category}
+                {product.is_set ? 'เซตสินค้า (Bundle)' : product.category}
               </span>
               <h1 className="text-4xl sm:text-5xl font-black text-gray-900 tracking-tight leading-tight mb-4">
                 {product.name}
@@ -232,8 +245,10 @@ export default function ProductDetailPage() {
               
               <div className="flex items-baseline gap-3 mb-6">
                 <p className="text-4xl font-black text-gray-900">฿{finalUnitPrice}</p>
-                {isLongSleeve && product.long_sleeve_price > 0 && (
-                  <span className="text-sm font-bold text-yellow-600 bg-yellow-50 px-2 py-1 rounded-md">รวมค่าแขนยาวแล้ว</span>
+                {sleeveAddonCount > 0 && product.long_sleeve_price > 0 && (
+                  <span className="text-sm font-bold text-yellow-600 bg-yellow-50 px-2 py-1 rounded-md border border-yellow-100">
+                    บวกค่าแขนยาว {sleeveAddonCount} ชิ้น
+                  </span>
                 )}
               </div>
               
@@ -242,97 +257,104 @@ export default function ProductDetailPage() {
               </p>
             </div>
 
-            {/* ระบบเลือกสี */}
-            {availableColors.length > 0 && (
-              <div className="pt-8 border-t border-gray-100">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider flex items-center gap-2">
-                    <Palette className="w-4 h-4" /> เลือกสี
-                  </h3>
-                  <span className="text-sm text-gray-500 font-medium">{selectedColor || 'ยังไม่ได้เลือก'}</span>
-                </div>
-                
-                <div className="flex flex-wrap gap-3">
-                  {availableColors.map((color, idx) => {
-                    const isSelected = selectedColor === color;
-                    return (
-                      <button
-                        key={idx}
-                        onClick={() => setSelectedColor(color)}
-                        className={clsx(
-                          "px-5 py-2.5 rounded-full border-2 font-bold transition-all duration-200",
-                          isSelected 
-                            ? "border-gray-900 bg-gray-900 text-white shadow-md transform scale-105" 
-                            : "border-gray-200 bg-white text-gray-600 hover:border-gray-900 hover:text-gray-900"
-                        )}
-                      >
-                        {color}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
+            {/* ✅ กล่องตัวเลือกสินค้า วนลูปตามจำนวนชิ้น */}
+            <div className="flex flex-col gap-6 pt-4 border-t border-gray-100">
+              {selections.map((selection, idx) => (
+                <div key={idx} className={clsx("transition-all", totalPieces > 1 ? "p-6 bg-gray-50 rounded-3xl border border-gray-200" : "")}>
+                  
+                  {totalPieces > 1 && (
+                    <h3 className="text-lg font-black text-gray-900 mb-5 flex items-center gap-2">
+                      <Package className="w-5 h-5 text-purple-600" /> ระบุตัวเลือกสำหรับชิ้นที่ {idx + 1}
+                    </h3>
+                  )}
 
-            {/* ระบบเลือกไซซ์ */}
-            {availableSizes.length > 0 && (
-              <div className="pt-8 border-t border-gray-100">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider flex items-center gap-2">
-                    <Ruler className="w-4 h-4" /> เลือกขนาด (Size)
-                  </h3>
-                  <span className="text-sm text-gray-500 font-medium">{selectedSize ? selectedSize.split(':')[0] : 'ยังไม่ได้เลือก'}</span>
-                </div>
-                
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {availableSizes.map((sizeOption, idx) => {
-                    const isSelected = selectedSize === sizeOption;
-                    return (
-                      <button
-                        key={idx}
-                        onClick={() => setSelectedSize(sizeOption)}
-                        className={clsx(
-                          "px-4 py-3 rounded-2xl border-2 text-left transition-all duration-200 group",
-                          isSelected ? "border-gray-900 bg-gray-900 text-white shadow-md" : "border-gray-200 bg-white text-gray-600 hover:border-gray-900"
-                        )}
-                      >
-                        <div className="font-bold text-lg leading-none">{sizeOption.split(':')[0]}</div>
-                        {sizeOption.split(':')[1] && (
-                          <div className={clsx("text-xs font-medium mt-1", isSelected ? "text-gray-300" : "text-gray-400 group-hover:text-gray-500")}>
-                            {sizeOption.split(':')[1].trim()}
-                          </div>
-                        )}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            )}
+                  <div className="space-y-6">
+                    {/* ระบบเลือกสี */}
+                    {availableColors.length > 0 && (
+                      <div>
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wider flex items-center gap-2">
+                            <Palette className="w-4 h-4" /> เลือกสี
+                          </h4>
+                          <span className="text-sm text-gray-500 font-medium">{selection.color || 'ยังไม่ได้เลือก'}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-2 sm:gap-3">
+                          {availableColors.map((color, cIdx) => (
+                            <button
+                              key={cIdx}
+                              onClick={() => updateSelection(idx, 'color', color)}
+                              className={clsx(
+                                "px-4 py-2 rounded-full border-2 font-bold transition-all duration-200 text-sm sm:text-base",
+                                selection.color === color ? "border-gray-900 bg-gray-900 text-white shadow-md transform scale-105" : "border-gray-200 bg-white text-gray-600 hover:border-gray-900 hover:text-gray-900"
+                              )}
+                            >
+                              {color}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
-            {/* ระบบเลือกรูปแบบแขนเสื้อ (เฉพาะหมวดเสื้อ) */}
-            {isShirt && (
-              <div className="pt-8 border-t border-gray-100">
-                <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-4">รูปแบบแขนเสื้อ</h3>
-                <div className="grid grid-cols-2 gap-3">
-                  <button 
-                    onClick={() => setIsLongSleeve(false)} 
-                    className={clsx("px-4 py-4 rounded-2xl border-2 text-center font-bold transition-all", !isLongSleeve ? "border-gray-900 bg-gray-900 text-white shadow-md" : "border-gray-200 bg-white text-gray-600 hover:border-gray-900")}
-                  >
-                    แขนสั้น <span className="block text-xs font-medium opacity-70 mt-1">ราคาปกติ</span>
-                  </button>
-                  <button 
-                    onClick={() => setIsLongSleeve(true)} 
-                    className={clsx("px-4 py-4 rounded-2xl border-2 text-center font-bold transition-all", isLongSleeve ? "border-gray-900 bg-gray-900 text-white shadow-md" : "border-gray-200 bg-white text-gray-600 hover:border-gray-900")}
-                  >
-                    แขนยาว <span className="block text-xs font-medium opacity-70 mt-1">{product.long_sleeve_price > 0 ? `+฿${product.long_sleeve_price}` : 'ฟรี'}</span>
-                  </button>
-                </div>
-              </div>
-            )}
+                    {/* ระบบเลือกไซซ์ */}
+                    {availableSizes.length > 0 && (
+                      <div>
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wider flex items-center gap-2">
+                            <Ruler className="w-4 h-4" /> เลือกขนาด (Size)
+                          </h4>
+                          <span className="text-sm text-gray-500 font-medium">{selection.size ? selection.size.split(':')[0] : 'ยังไม่ได้เลือก'}</span>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
+                          {availableSizes.map((sizeOption, sIdx) => (
+                            <button
+                              key={sIdx}
+                              onClick={() => updateSelection(idx, 'size', sizeOption)}
+                              className={clsx(
+                                "px-3 py-2 sm:px-4 sm:py-3 rounded-2xl border-2 text-left transition-all duration-200 group",
+                                selection.size === sizeOption ? "border-gray-900 bg-gray-900 text-white shadow-md" : "border-gray-200 bg-white text-gray-600 hover:border-gray-900"
+                              )}
+                            >
+                              <div className="font-bold text-base sm:text-lg leading-none">{sizeOption.split(':')[0]}</div>
+                              {sizeOption.split(':')[1] && (
+                                <div className={clsx("text-[10px] sm:text-xs font-medium mt-1", selection.size === sizeOption ? "text-gray-300" : "text-gray-400 group-hover:text-gray-500")}>
+                                  {sizeOption.split(':')[1].trim()}
+                                </div>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
-            {/* ระบบเลือกจำนวนชิ้น */}
+                    {/* ระบบเลือกรูปแบบแขนเสื้อ */}
+                    {showSleeveOption && (
+                      <div>
+                        <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-3">รูปแบบแขนเสื้อ</h4>
+                        <div className="grid grid-cols-2 gap-2 sm:gap-3">
+                          <button 
+                            onClick={() => updateSelection(idx, 'isLongSleeve', false)} 
+                            className={clsx("px-3 py-3 sm:px-4 sm:py-4 rounded-2xl border-2 text-center font-bold transition-all text-sm sm:text-base", !selection.isLongSleeve ? "border-gray-900 bg-gray-900 text-white shadow-md" : "border-gray-200 bg-white text-gray-600 hover:border-gray-900")}
+                          >
+                            แขนสั้น <span className="block text-[10px] sm:text-xs font-medium opacity-70 mt-1">ราคาปกติ</span>
+                          </button>
+                          <button 
+                            onClick={() => updateSelection(idx, 'isLongSleeve', true)} 
+                            className={clsx("px-3 py-3 sm:px-4 sm:py-4 rounded-2xl border-2 text-center font-bold transition-all text-sm sm:text-base", selection.isLongSleeve ? "border-gray-900 bg-gray-900 text-white shadow-md" : "border-gray-200 bg-white text-gray-600 hover:border-gray-900")}
+                          >
+                            แขนยาว <span className="block text-[10px] sm:text-xs font-medium opacity-70 mt-1">{product.long_sleeve_price > 0 ? `+฿${product.long_sleeve_price}` : 'ฟรี'}</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                </div>
+              ))}
+            </div>
+
+            {/* ระบบเลือกจำนวนชุด */}
             <div className="pt-8 border-t border-gray-100">
-              <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-4">จำนวน</h3>
+              <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-4">จำนวน{product.is_set ? 'เซต' : 'ชิ้น'}</h3>
               <div className="flex items-center w-fit bg-gray-50 border border-gray-200 rounded-2xl p-1">
                 <button onClick={() => setQuantity(Math.max(1, quantity - 1))} className="w-12 h-12 flex items-center justify-center text-gray-600 hover:bg-white rounded-xl transition-colors shadow-sm"><Minus className="w-5 h-5" /></button>
                 <span className="w-16 text-center font-black text-gray-900 text-xl">{quantity}</span>
@@ -345,46 +367,23 @@ export default function ProductDetailPage() {
               <div className="flex items-center justify-between text-sm font-bold text-gray-500 mb-6">
                 <span>สถานะสินค้า</span>
                 <span className={clsx(isOutOfStock ? "text-red-500" : "text-green-600")}>
-                  {/* ✅ แก้ไข: แสดงคำว่าเปิดรับพรีออร์เดอร์ ถ้าสินค้าเป็นแบบพรีออร์เดอร์ */}
-                  {isOutOfStock ? 'สินค้าหมด' : product.is_preorder ? 'เปิดรับพรีออร์เดอร์' : `มีสินค้า (${product.stock_quantity} ชิ้น)`}
+                  {isOutOfStock ? 'สินค้าหมด' : product.is_preorder ? 'เปิดรับพรีออร์เดอร์' : `มีสินค้า (${product.stock_quantity} ${product.is_set ? 'เซต' : 'ชิ้น'})`}
                 </span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <button
-                  onClick={() => handleAction(false)}
-                  disabled={!isReadyToBuy}
-                  className={clsx(
-                    "w-full flex items-center justify-center gap-3 py-5 rounded-2xl font-bold text-lg transition-all border-2",
-                    !isReadyToBuy 
-                      ? "bg-gray-50 text-gray-400 border-gray-100 cursor-not-allowed" 
-                      : addedSuccess
-                        ? "bg-green-50 text-green-700 border-green-200" 
-                        : "bg-white text-gray-900 border-gray-900 hover:bg-gray-50"
-                  )}
-                >
+                <button onClick={() => handleAction(false)} disabled={!isReadyToBuy} className={clsx("w-full flex items-center justify-center gap-3 py-5 rounded-2xl font-bold text-lg transition-all border-2", !isReadyToBuy ? "bg-gray-50 text-gray-400 border-gray-100 cursor-not-allowed" : addedSuccess ? "bg-green-50 text-green-700 border-green-200" : "bg-white text-gray-900 border-gray-900 hover:bg-gray-50")}>
                   {addedSuccess ? <CheckCircle2 className="w-6 h-6" /> : <ShoppingBag className="w-6 h-6" />}
                   {addedSuccess ? 'เพิ่มสำเร็จ!' : 'หยิบใส่ตะกร้า'}
                 </button>
 
-                <button
-                  onClick={() => handleAction(true)}
-                  disabled={!isReadyToBuy}
-                  className={clsx(
-                    "w-full flex items-center justify-center gap-3 py-5 rounded-2xl font-bold text-lg transition-all shadow-sm",
-                    !isReadyToBuy
-                      ? "bg-gray-100 text-gray-400 cursor-not-allowed border-2 border-gray-200"
-                      : "bg-gray-900 text-white hover:bg-gray-800 hover:shadow-md transform hover:-translate-y-0.5"
-                  )}
-                >
-                  <CreditCard className="w-6 h-6" />
-                  ซื้อสินค้าเลย
+                <button onClick={() => handleAction(true)} disabled={!isReadyToBuy} className={clsx("w-full flex items-center justify-center gap-3 py-5 rounded-2xl font-bold text-lg transition-all shadow-sm", !isReadyToBuy ? "bg-gray-100 text-gray-400 cursor-not-allowed border-2 border-gray-200" : "bg-gray-900 text-white hover:bg-gray-800 hover:shadow-md transform hover:-translate-y-0.5")}>
+                  <CreditCard className="w-6 h-6" /> ซื้อสินค้าเลย
                 </button>
               </div>
               
-              {/* คำเตือนถ้ายังเลือกไม่ครบ */}
               {!isReadyToBuy && !isOutOfStock && (
-                <p className="text-red-500 text-sm font-medium mt-4 text-center">กรุณาเลือกรูปแบบสินค้าให้ครบถ้วนก่อนทำรายการ</p>
+                <p className="text-red-500 text-sm font-medium mt-4 text-center animate-pulse">กรุณาระบุตัวเลือกให้ครบทุกชิ้นก่อนสั่งซื้อ</p>
               )}
             </div>
 
