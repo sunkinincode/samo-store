@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { Package } from 'lucide-react'
 import { login, loginWithGoogle } from '@/app/actions/auth'
+import { headers } from 'next/headers' // ✅ เพิ่ม import สำหรับอ่านข้อมูลเบราว์เซอร์
 
 export default async function LoginPage({
   searchParams,
@@ -8,6 +9,11 @@ export default async function LoginPage({
   searchParams: Promise<{ message?: string; error?: string }>
 }) {
   const params = await searchParams
+  
+  // ✅ ตรวจสอบเบราว์เซอร์ว่ามาจากแอปแชทหรือไม่ (Server-side)
+  const headersList = await headers()
+  const userAgent = headersList.get('user-agent') || ''
+  const isInAppBrowser = /FBAV|FBAN|Line|Instagram|Twitter|TikTok/i.test(userAgent)
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4 py-12">
@@ -31,11 +37,22 @@ export default async function LoginPage({
           </div>
         )}
 
+        {/* ✅ ป้ายเตือนกรณีเปิดจาก In-App Browser (FB, LINE, IG) */}
+        {isInAppBrowser && (
+          <div className="mt-6 bg-red-50 border-2 border-red-200 text-red-700 p-4 rounded-xl text-center shadow-sm animate-in fade-in zoom-in duration-300">
+            <p className="font-bold text-lg mb-1">⚠️ ไม่สามารถล็อกอินด้วย Google ได้</p>
+            <p className="text-sm">คุณกำลังเปิดเว็บผ่านแอปแชท กรุณากด <b>ไอคอนจุด 3 จุด (มุมหน้าจอ)</b> <br/>แล้วเลือก <b>"เปิดในเบราว์เซอร์"</b> (Safari/Chrome) ก่อนครับ</p>
+          </div>
+        )}
+
         {/* ปุ่ม Google สำหรับ User ทั่วไป */}
         <form action={loginWithGoogle} className="mt-8">
           <button
             type="submit"
-            className="w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-lg font-semibold text-gray-700 bg-white border border-gray-300 hover:bg-gray-50 hover:shadow-sm transition-all"
+            disabled={isInAppBrowser} // ✅ ปิดการใช้งานปุ่มถ้าเปิดจากแอปแชท
+            className={`w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-lg font-semibold text-gray-700 bg-white border border-gray-300 transition-all ${
+              isInAppBrowser ? 'opacity-50 cursor-not-allowed bg-gray-50' : 'hover:bg-gray-50 hover:shadow-sm'
+            }`}
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24">
               <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
