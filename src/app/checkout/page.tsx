@@ -8,7 +8,6 @@ import { createClient } from '@/utils/supabase/client'
 import { Loader2, AlertCircle, Upload, Clock, CheckCircle2 } from 'lucide-react'
 import { processCheckout } from '@/app/actions/checkout'
 
-// 1. แยกเนื้อหาเดิมออกมาเป็น Component ย่อย
 function CheckoutContent() {
   const searchParams = useSearchParams()
   const { checkoutItems, checkoutTotal, clearPurchasedItems } = useCart()
@@ -111,6 +110,16 @@ function CheckoutContent() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
+      // ✅ เพิ่มการเช็คขนาดไฟล์จำกัดที่ 5MB
+      const maxSizeInBytes = 5 * 1024 * 1024 
+      if (file.size > maxSizeInBytes) {
+        setError('ไฟล์รูปภาพใหญ่เกินไป (จำกัดไม่เกิน 5MB) กรุณาครอปรูปหรือลดขนาดลงครับ')
+        e.target.value = '' // ล้างค่า input
+        setPreviewUrl(null)
+        return
+      }
+
+      setError(null)
       const url = URL.createObjectURL(file)
       setPreviewUrl(url)
     }
@@ -243,10 +252,8 @@ function CheckoutContent() {
   )
 }
 
-// 2. Component หลัก (Default Export) ที่ครอบเนื้อหาด้วย Suspense
 export default function CheckoutPage() {
   return (
-    // หากมีการดึงข้อมูลระหว่างทางหน้าจอจะแสดงวงกลมโหลดแบบตรงกลางจอ
     <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-gray-900" /></div>}>
       <CheckoutContent />
     </Suspense>

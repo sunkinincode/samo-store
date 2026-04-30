@@ -19,21 +19,25 @@ export async function processCheckout(formData: FormData, cart: CartItem[], tota
   let slipData: any = null
   let slipAmount = 0
 
-  // 1. ตรวจสอบสลิปผ่าน Thunder API V2 (โครงสร้างใหม่ล่าสุด)
+  // 1. ตรวจสอบสลิปผ่าน Thunder API V2 พร้อมระบบ Timeout
   try {
     const thunderFormData = new FormData()
-    // ตามคู่มือ: ต้องใช้คีย์ชื่อ 'image' สำหรับการอัปโหลดไฟล์
     thunderFormData.append('image', slipFile)
 
-    // ตามคู่มือ: Endpoint ที่ถูกต้องคือ /v2/verify/bank
+    // ✅ สร้าง AbortController เพื่อทำ Timeout 10 วินาที
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 10000) // 10000 ms = 10 วินาที
+
     const thunderRes = await fetch('https://api.thunder.in.th/v2/verify/bank', {
       method: 'POST',
       headers: {
-        // ตามคู่มือ: ต้องใช้ Authorization: Bearer
         'Authorization': `Bearer ${process.env.THUNDER_API_KEY}`,
       },
-      body: thunderFormData, 
+      body: thunderFormData,
+      signal: controller.signal // ✅ แนบสัญญาณ Abort เข้าไป
     })
+
+    clearTimeout(timeoutId) // เคลียร์ Timeout ถ้า API ตอบกลับมาก่อนเวลา
 
     const thunderResponse = await thunderRes.json()
 
@@ -41,16 +45,12 @@ export async function processCheckout(formData: FormData, cart: CartItem[], tota
     console.log(thunderResponse)
     console.log("============================")
 
-    // ตามคู่มือ: หาก success เป็น false จะมี object 'error' แนบมาด้วย
     if (!thunderResponse.success) {
       const errorMessage = thunderResponse.error?.message || 'ไม่สามารถอ่าน QR Code หรือข้อมูลจากสลิปได้'
       return { error: `[ตรวจสอบไม่ผ่าน] ${errorMessage}` }
     }
 
-    // ตามคู่มือ: ข้อมูลดิบของสลิปจะอยู่ใน data.rawSlip
     slipData = thunderResponse.data.rawSlip
-    
-    // ยอดเงินโอนเข้าจะซ้อนอยู่ใน amount.amount
     slipAmount = slipData.amount?.amount
 
     if (Number(slipAmount) !== Number(totalAmount)) {
@@ -58,6 +58,10 @@ export async function processCheckout(formData: FormData, cart: CartItem[], tota
     }
 
   } catch (error: any) {
+    // ✅ ดักจับกรณีที่หมดเวลา (Timeout)
+    if (error.name === 'AbortError') {
+      return { error: 'ใช้เวลาตรวจสอบนานเกินไป กรุณาตรวจสอบว่ารูปภาพคือสลิปที่ถูกต้องหรือไม่' }
+    }
     console.error('Thunder API Exception:', error)
     return { error: `ระบบตรวจสอบสลิปขัดข้อง: ${error.message}` }
   }
@@ -88,7 +92,7 @@ export async function processCheckout(formData: FormData, cart: CartItem[], tota
       id: orderId,
       user_id: user.id,
       total_amount: totalAmount,
-      slip_url: null, // เก็บ null ตามเดิมเพราะไม่เก็บรูป
+      slip_url: null,
       slip_verified: true,
       status: 'paid'
     })
@@ -96,7 +100,6 @@ export async function processCheckout(formData: FormData, cart: CartItem[], tota
   if (orderError) return { error: `Database Error (Orders): ${orderError.message}` }
 
   // 5. บันทึกข้อมูลสลิป
-  // อ้างอิง Path ของบัญชีผู้ส่ง/ผู้รับ จากคู่มือ RawSlip ของ Thunder
   const senderTh = slipData.sender?.account?.name?.th
   const senderEn = slipData.sender?.account?.name?.en
   const receiverTh = slipData.receiver?.account?.name?.th
