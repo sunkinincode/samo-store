@@ -7,10 +7,10 @@ import { logout } from '@/app/actions/auth'
 import { useEffect, useState, useMemo } from 'react'
 import { User } from '@supabase/supabase-js'
 import { useCart } from '@/context/CartContext'
+import { usePathname } from 'next/navigation' // ✅ นำเข้า usePathname
 
-// ✅ รับ prop initialUser 
 export default function Navbar({ initialUser }: { initialUser: User | null }) {
-  // ✅ ใช้ initialUser เป็นค่าตั้งต้น
+  const pathname = usePathname() // ✅ อ่าน URL ปัจจุบัน
   const [user, setUser] = useState<User | null>(initialUser)
   const supabase = createClient()
   const { cart } = useCart()
@@ -20,17 +20,12 @@ export default function Navbar({ initialUser }: { initialUser: User | null }) {
   [cart])
 
   useEffect(() => {
-    // ✅ นำ initAuth() ออก เพราะเรามี initialUser แล้ว
-    
-    // ✅ เปิดการทำงานของ onAuthStateChange ไว้ เพื่อจัดการกรณีผู้ใช้ Login/Logout ระหว่างที่ยังเปิดหน้านั้นอยู่
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
         setUser(session?.user ?? null)
       }
     })
-
     return () => subscription.unsubscribe()
-  // ✅ เพิ่ม supabase.auth ลงใน dependency array
   }, [supabase.auth]) 
 
   const handleLogoutClick = async (e: React.FormEvent) => {
@@ -38,6 +33,11 @@ export default function Navbar({ initialUser }: { initialUser: User | null }) {
     if (window.confirm('คุณต้องการออกจากระบบใช่หรือไม่?')) {
       await logout()
     }
+  }
+
+  // ✅ ถ้าอยู่หน้า Admin ให้ Return null (ไม่ต้องแสดง Navbar ของลูกค้า)
+  if (pathname.startsWith('/admin')) {
+    return null
   }
 
   return (
@@ -54,21 +54,11 @@ export default function Navbar({ initialUser }: { initialUser: User | null }) {
               <div className="flex items-center">
                 
                 <div className="flex items-center gap-2 sm:gap-4">
-                  <Link 
-                    href="/orders" 
-                    prefetch={false}
-                    className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-full transition-colors"
-                    title="ประวัติการสั่งซื้อ"
-                  >
+                  <Link href="/orders" prefetch={false} className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-full transition-colors" title="ประวัติการสั่งซื้อ">
                     <Receipt className="w-5 h-5" />
                   </Link>
                   
-                  <Link 
-                    href="/cart" 
-                    prefetch={false}
-                    className="relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-full transition-colors"
-                    title="ตะกร้าสินค้า"
-                  >
+                  <Link href="/cart" prefetch={false} className="relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-full transition-colors" title="ตะกร้าสินค้า">
                     <ShoppingBag className="w-5 h-5" />
                     {totalItems > 0 && (
                       <span className="absolute top-0 right-0 transform translate-x-1/4 -translate-y-1/4 bg-red-500 text-white text-[10px] font-black w-5 h-5 flex items-center justify-center rounded-full shadow-sm ring-2 ring-white">
@@ -80,11 +70,7 @@ export default function Navbar({ initialUser }: { initialUser: User | null }) {
 
                 <div className="flex items-center ml-3 pl-3 sm:ml-4 sm:pl-4 border-l-2 border-gray-100">
                   <form onSubmit={handleLogoutClick}>
-                    <button 
-                      type="submit" 
-                      className="flex items-center gap-2 text-sm font-medium text-gray-400 hover:text-red-500 p-2 rounded-lg transition-colors group"
-                      title="ออกจากระบบ"
-                    >
+                    <button type="submit" className="flex items-center gap-2 text-sm font-medium text-gray-400 hover:text-red-500 p-2 rounded-lg transition-colors group" title="ออกจากระบบ">
                       <LogOut className="w-5 h-5 group-hover:scale-110 transition-transform" />
                       <span className="hidden sm:inline">ออกจากระบบ</span>
                     </button>

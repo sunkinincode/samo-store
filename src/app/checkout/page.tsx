@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import Navbar from '@/components/Navbar'
 import { useCart } from '@/context/CartContext'
 import { createClient } from '@/utils/supabase/client'
 import { Loader2, AlertCircle, Upload, Clock, CheckCircle2 } from 'lucide-react'
@@ -18,7 +17,10 @@ function CheckoutContent() {
   const [displayItems, setDisplayItems] = useState<any[]>([])
   const [localTotal, setLocalTotal] = useState(0)
 
+  // ✅ ข้อมูล PromptPay และ บัญชีสำรอง
   const [promptpayPhone, setPromptpayPhone] = useState<string>('')
+  const [bankInfo, setBankInfo] = useState<{name: string, no: string, accountName: string} | null>(null)
+  
   const [loading, setLoading] = useState(true)
   const [isProcessing, setIsProcessing] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -29,12 +31,25 @@ function CheckoutContent() {
 
   const [successOrderId, setSuccessOrderId] = useState<string | null>(null)
   const [countdown, setCountdown] = useState(5)
+  const [timeoutCountdown, setTimeoutCountdown] = useState<number | null>(null) // ✅ State สำหรับนับถอยหลังรีเฟรช
 
   useEffect(() => {
     const fetchSettingsAndProduct = async () => {
-      const { data } = await supabase.from('store_settings').select('promptpay_phone, sale_start, sale_end').eq('id', 1).single()
+      // ✅ ดึงข้อมูลบัญชีสำรองมาด้วย
+      const { data } = await supabase.from('store_settings').select('promptpay_phone, sale_start, sale_end, bank_name, bank_account_no, bank_account_name').eq('id', 1).single()
+      
       if (data) {
         if (data.promptpay_phone) setPromptpayPhone(data.promptpay_phone)
+        
+        // ถ้ามีข้อมูลบัญชีสำรอง ให้เซ็ตลง State
+        if (data.bank_account_no) {
+          setBankInfo({
+            name: data.bank_name || 'ไม่ระบุธนาคาร',
+            no: data.bank_account_no,
+            accountName: data.bank_account_name || 'ไม่ระบุชื่อบัญชี'
+          })
+        }
+
         const now = new Date().getTime()
         const start = data.sale_start ? new Date(data.sale_start).getTime() : null
         const end = data.sale_end ? new Date(data.sale_end).getTime() : null
@@ -81,6 +96,7 @@ function CheckoutContent() {
     fetchSettingsAndProduct()
   }, [searchParams, checkoutItems, checkoutTotal, supabase])
 
+  // ✅ Effect นับถอยหลังไปหน้าออร์เดอร์เมื่อสำเร็จ
   useEffect(() => {
     if (successOrderId && countdown > 0) {
       const timer = setTimeout(() => setCountdown(countdown - 1), 1000)
@@ -89,6 +105,16 @@ function CheckoutContent() {
       router.push(`/orders/${successOrderId}`)
     }
   }, [successOrderId, countdown, router])
+
+  // ✅ Effect นับถอยหลังเพื่อรีเฟรชหน้าเมื่อ Timeout
+  useEffect(() => {
+    if (timeoutCountdown !== null && timeoutCountdown > 0) {
+      const timer = setTimeout(() => setTimeoutCountdown(timeoutCountdown - 1), 1000)
+      return () => clearTimeout(timer)
+    } else if (timeoutCountdown === 0) {
+      window.location.reload() // รีเฟรชหน้าปัจจุบัน
+    }
+  }, [timeoutCountdown])
 
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -110,11 +136,10 @@ function CheckoutContent() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
-      // ✅ เพิ่มการเช็คขนาดไฟล์จำกัดที่ 5MB
       const maxSizeInBytes = 5 * 1024 * 1024 
       if (file.size > maxSizeInBytes) {
         setError('ไฟล์รูปภาพใหญ่เกินไป (จำกัดไม่เกิน 5MB) กรุณาครอปรูปหรือลดขนาดลงครับ')
-        e.target.value = '' // ล้างค่า input
+        e.target.value = '' 
         setPreviewUrl(null)
         return
       }
@@ -131,10 +156,14 @@ function CheckoutContent() {
     setError(null)
 
     const formData = new FormData(e.currentTarget)
-    
     const result = await processCheckout(formData, displayItems, localTotal)
 
-    if (result.error) {
+    if (result.errorType === 'TIMEOUT') {
+      // ✅ ถ้าระบบโยน Error Timeout มา ให้เริ่มนับถอยหลังรีเฟรช 5 วินาที
+      setError(result.error)
+      setTimeoutCountdown(5)
+      // ไม่ต้องปรับ isProcessing เป็น false เพื่อล็อกปุ่มไว้ไม่ให้กดย้ำ
+    } else if (result.error) {
       setError(result.error)
       setIsProcessing(false)
     } else if (result.success && result.orderId) {
@@ -192,17 +221,37 @@ function CheckoutContent() {
           <div className="flex flex-col items-center justify-center mb-10 pb-10 border-b border-gray-100">
             <span className="text-sm font-medium text-gray-500 mb-2">ยอดที่ต้องชำระ</span>
             <span className="text-4xl font-bold text-gray-900 mb-6">฿{localTotal}</span>
-            <div className="bg-gray-50 p-6 rounded-2xl border border-gray-100 flex flex-col items-center">
-              {qrUrl ? <img src={qrUrl} alt="PromptPay QR Code" className="w-48 h-48 sm:w-64 sm:h-64 object-contain mb-4 bg-white p-2 rounded-xl border border-gray-200" /> : <div className="w-48 h-48 bg-gray-200 flex items-center justify-center mb-4 rounded-xl"><span className="text-gray-500 text-sm">ยังไม่ได้ตั้งค่าเบอร์ PromptPay</span></div>}
-              <p className="text-sm font-medium text-gray-600">สแกนเพื่อชำระเงินผ่านแอปธนาคาร</p>
+            <div className="bg-gray-50 w-full max-w-md p-6 rounded-2xl border border-gray-100 flex flex-col items-center">
+              {qrUrl ? <img src={qrUrl} alt="PromptPay QR Code" className="w-48 h-48 sm:w-64 sm:h-64 object-contain mb-4 bg-white p-2 rounded-xl border border-gray-200 shadow-sm" /> : <div className="w-48 h-48 bg-gray-200 flex items-center justify-center mb-4 rounded-xl"><span className="text-gray-500 text-sm">ยังไม่ได้ตั้งค่าเบอร์ PromptPay</span></div>}
+              <p className="text-sm font-bold text-gray-600 mb-1">สแกนเพื่อชำระเงินผ่านแอปธนาคาร</p>
+              
+              {/* ✅ แสดงบัญชีสำรอง (ถ้ามี) */}
+              {bankInfo && (
+                <div className="mt-6 pt-6 w-full border-t border-gray-200 text-center">
+                  <p className="text-xs text-gray-500 mb-2 uppercase tracking-wide font-bold">หรือโอนเข้าบัญชีธนาคาร</p>
+                  <div className="bg-white py-3 px-4 rounded-xl border border-gray-200 shadow-sm">
+                    <p className="text-sm font-bold text-gray-900">{bankInfo.name}</p>
+                    <p className="text-lg font-mono text-gray-900 tracking-wider my-1">{bankInfo.no}</p>
+                    <p className="text-xs text-gray-500">{bankInfo.accountName}</p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
           <form ref={formRef} onSubmit={handleSubmit} className="space-y-6">
             {error && (
-              <div className="p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3">
+              <div className="p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3 animate-in fade-in">
                 <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
-                <p className="text-sm text-red-700 font-medium">{error}</p>
+                <div className="flex-1">
+                  <p className="text-sm text-red-700 font-medium">{error}</p>
+                  {/* ✅ แจ้งเตือนนับถอยหลังกรณี Timeout */}
+                  {timeoutCountdown !== null && (
+                    <p className="text-sm text-red-600 mt-1 font-bold">
+                      กำลังรีเฟรชหน้านี้ใน {timeoutCountdown} วินาที...
+                    </p>
+                  )}
+                </div>
               </div>
             )}
 
@@ -223,7 +272,8 @@ function CheckoutContent() {
             <div>
               <label className="block text-sm font-bold text-gray-900 mb-3 text-center">อัปโหลดสลิปโอนเงิน</label>
               <div className="relative">
-                <input type="file" name="slip" accept="image/jpeg, image/png, image/webp" required onChange={handleFileChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+                {/* ล็อก input ไม่ให้แก้ไขรูประหว่างนับถอยหลังรีเฟรช */}
+                <input type="file" name="slip" accept="image/jpeg, image/png, image/webp" required onChange={handleFileChange} disabled={isProcessing || timeoutCountdown !== null} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10 disabled:cursor-not-allowed" />
                 {previewUrl ? (
                   <div className="w-full h-64 border-2 border-gray-200 rounded-2xl overflow-hidden relative group bg-gray-50 flex items-center justify-center">
                     <img src={previewUrl} alt="Slip Preview" className="max-w-full max-h-full object-contain" />
@@ -240,8 +290,9 @@ function CheckoutContent() {
               </div>
             </div>
 
-            <button type="submit" disabled={isProcessing || !previewUrl} className="w-full flex items-center justify-center gap-2 bg-gray-900 text-white py-4 rounded-xl font-medium hover:bg-gray-800 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors mt-8 shadow-sm">
-              {isProcessing ? <><Loader2 className="w-5 h-5 animate-spin" /> กำลังตรวจสอบข้อมูลสลิป...</> : 'ยืนยันการชำระเงิน'}
+            {/* ล็อกปุ่มถ้าระบบกำลังประมวลผล หรือ กำลังนับถอยหลังรีเฟรชหน้า */}
+            <button type="submit" disabled={isProcessing || !previewUrl || timeoutCountdown !== null} className="w-full flex items-center justify-center gap-2 bg-gray-900 text-white py-4 rounded-xl font-medium hover:bg-gray-800 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors mt-8 shadow-sm">
+              {isProcessing && timeoutCountdown === null ? <><Loader2 className="w-5 h-5 animate-spin" /> กำลังตรวจสอบข้อมูลสลิป...</> : 'ยืนยันการชำระเงิน'}
             </button>
           </form>
         </div>

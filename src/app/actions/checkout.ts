@@ -19,14 +19,13 @@ export async function processCheckout(formData: FormData, cart: CartItem[], tota
   let slipData: any = null
   let slipAmount = 0
 
-  // 1. ตรวจสอบสลิปผ่าน Thunder API V2 พร้อมระบบ Timeout
   try {
     const thunderFormData = new FormData()
     thunderFormData.append('image', slipFile)
 
-    // ✅ สร้าง AbortController เพื่อทำ Timeout 10 วินาที
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 10000) // 10000 ms = 10 วินาที
+    // ✅ ขยายเวลาเป็น 15 วินาที
+    const timeoutId = setTimeout(() => controller.abort(), 15000) 
 
     const thunderRes = await fetch('https://api.thunder.in.th/v2/verify/bank', {
       method: 'POST',
@@ -34,16 +33,12 @@ export async function processCheckout(formData: FormData, cart: CartItem[], tota
         'Authorization': `Bearer ${process.env.THUNDER_API_KEY}`,
       },
       body: thunderFormData,
-      signal: controller.signal // ✅ แนบสัญญาณ Abort เข้าไป
+      signal: controller.signal
     })
 
-    clearTimeout(timeoutId) // เคลียร์ Timeout ถ้า API ตอบกลับมาก่อนเวลา
+    clearTimeout(timeoutId) 
 
     const thunderResponse = await thunderRes.json()
-
-    console.log("=== THUNDER RAW RESPONSE ===")
-    console.log(thunderResponse)
-    console.log("============================")
 
     if (!thunderResponse.success) {
       const errorMessage = thunderResponse.error?.message || 'ไม่สามารถอ่าน QR Code หรือข้อมูลจากสลิปได้'
@@ -58,15 +53,14 @@ export async function processCheckout(formData: FormData, cart: CartItem[], tota
     }
 
   } catch (error: any) {
-    // ✅ ดักจับกรณีที่หมดเวลา (Timeout)
     if (error.name === 'AbortError') {
-      return { error: 'ใช้เวลาตรวจสอบนานเกินไป กรุณาตรวจสอบว่ารูปภาพคือสลิปที่ถูกต้องหรือไม่' }
+      // ✅ ส่งโค้ด errorType กลับไปบอกหน้าบ้าน
+      return { errorType: 'TIMEOUT', error: 'ระบบใช้เวลาตรวจสอบสลิปนานเกินไป (เกิน 20 วินาที)' }
     }
     console.error('Thunder API Exception:', error)
     return { error: `ระบบตรวจสอบสลิปขัดข้อง: ${error.message}` }
   }
 
-  // 2. ป้องกันการใช้สลิปซ้ำ
   const transRef = slipData.transRef
   if (!transRef) {
       return { error: 'ไม่พบรหัสอ้างอิง (transRef) ในสลิปนี้' }
@@ -82,10 +76,8 @@ export async function processCheckout(formData: FormData, cart: CartItem[], tota
     return { error: 'สลิปนี้ถูกใช้งานไปแล้วในระบบ กรุณาใช้สลิปใหม่' }
   }
 
-  // 3. สร้าง Order ID 8 หลัก
   const orderId = Math.random().toString(36).substring(2, 10).toUpperCase()
 
-  // 4. บันทึกข้อมูล Order
   const { error: orderError } = await supabase
     .from('orders')
     .insert({
@@ -99,7 +91,6 @@ export async function processCheckout(formData: FormData, cart: CartItem[], tota
 
   if (orderError) return { error: `Database Error (Orders): ${orderError.message}` }
 
-  // 5. บันทึกข้อมูลสลิป
   const senderTh = slipData.sender?.account?.name?.th
   const senderEn = slipData.sender?.account?.name?.en
   const receiverTh = slipData.receiver?.account?.name?.th
@@ -117,12 +108,7 @@ export async function processCheckout(formData: FormData, cart: CartItem[], tota
       amount: slipAmount,
       trans_date: slipData.date ? new Date(slipData.date).toISOString() : new Date().toISOString()
     })
-  
-  if (slipRecordError) {
-      console.error("Slip Record Error:", slipRecordError)
-  }
 
-  // 6. บันทึก Order Items
   const orderItemsData = cart.map(item => ({
     order_id: orderId,
     product_id: item.product_id,
@@ -133,7 +119,6 @@ export async function processCheckout(formData: FormData, cart: CartItem[], tota
 
   await supabase.from('order_items').insert(orderItemsData)
 
-  // 7. ตัดสต็อกสินค้า
   for (const item of cart) {
     const { data: productData } = await supabase
       .from('products')
