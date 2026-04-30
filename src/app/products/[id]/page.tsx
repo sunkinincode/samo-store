@@ -9,7 +9,6 @@ import { Loader2, ArrowLeft, ShoppingBag, Ruler, AlertCircle, Minus, Plus, Credi
 import Link from 'next/link'
 import clsx from 'clsx'
 
-// ✅ เพิ่ม Type SetItem ให้ Product
 type SetItem = {
   id: string
   product_id: string
@@ -33,8 +32,11 @@ type Product = {
   set_items: SetItem[] | null
 }
 
-// ✅ สร้าง Type สำหรับเก็บตัวเลือกของ "แต่ละชิ้น"
+// ✅ อัปเดต Type ให้เก็บชื่อและหมวดหมู่ของสินค้าย่อยด้วย
 type Selection = {
+  product_id: string
+  name: string
+  category: string
   size: string
   color: string
   isLongSleeve: boolean
@@ -49,15 +51,11 @@ export default function ProductDetailPage() {
 
   const [product, setProduct] = useState<Product | null>(null)
   const [loading, setLoading] = useState(true)
-  
-  // ✅ State แบบ Array สำหรับเก็บตัวเลือกแยกทีละชิ้น
   const [selections, setSelections] = useState<Selection[]>([])
-  
-  const [quantity, setQuantity] = useState(1) // จำนวนชุดที่จะซื้อ
+  const [quantity, setQuantity] = useState(1) 
   const [addedSuccess, setAddedSuccess] = useState(false) 
   const [currentImageIdx, setCurrentImageIdx] = useState(0)
 
-  // เตรียมข้อมูลตัวเลือก
   const availableSizes = product?.size_info ? product.size_info.split(',').map(s => s.trim()).filter(s => s.length > 0) : []
   const availableColors = product?.colors ? product.colors.split(',').map(c => c.trim()).filter(c => c.length > 0) : []
   
@@ -65,7 +63,6 @@ export default function ProductDetailPage() {
     ? product.image_urls 
     : (product?.image_url ? [product.image_url] : [])
 
-  // ✅ คำนวณจำนวนชิ้นทั้งหมดในเซต (ถ้าไม่ใช่เซตจะเท่ากับ 1)
   const totalPieces = product?.is_set && product.set_items
     ? product.set_items.reduce((sum, item) => sum + (item.quantity || 1), 0)
     : 1
@@ -77,14 +74,48 @@ export default function ProductDetailPage() {
       const { data, error } = await supabase.from('products').select('*').eq('id', productId).single()
       if (data) {
         setProduct(data)
-        // ✅ สร้างกล่องตัวเลือกเปล่าๆ ไว้รอตามจำนวนชิ้น
-        const pieces = data.is_set && data.set_items ? data.set_items.reduce((sum: number, item: any) => sum + (item.quantity || 1), 0) : 1
-        setSelections(Array(pieces).fill({ size: '', color: '', isLongSleeve: false }))
+        
+        let initialSelections: Selection[] = []
+
+        // ✅ ถ้าระบุว่าเป็นเซต ให้ไปดึงข้อมูลหมวดหมู่ของสินค้าลูกแต่ละตัวมาด้วย
+        if (data.is_set && data.set_items) {
+          const subProductIds = data.set_items.map((item: any) => item.product_id)
+          const { data: subProducts } = await supabase.from('products').select('id, name, category').in('id', subProductIds)
+          
+          const subProductsMap: Record<string, {name: string, category: string}> = {}
+          if (subProducts) {
+            subProducts.forEach(sp => { subProductsMap[sp.id] = sp })
+          }
+
+          data.set_items.forEach((item: any) => {
+            const sp = subProductsMap[item.product_id] || { name: 'สินค้า', category: 'shirt' }
+            for (let i = 0; i < (item.quantity || 1); i++) {
+              initialSelections.push({
+                product_id: item.product_id,
+                name: sp.name,
+                category: sp.category,
+                size: '',
+                color: '',
+                isLongSleeve: false
+              })
+            }
+          })
+        } else {
+          initialSelections.push({
+            product_id: data.id,
+            name: data.name,
+            category: data.category,
+            size: '',
+            color: '',
+            isLongSleeve: false
+          })
+        }
+        
+        setSelections(initialSelections)
       }
       setLoading(false)
 
-      channel = supabase
-        .channel(`product-${productId}`)
+      channel = supabase.channel(`product-${productId}`)
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'products', filter: `id=eq.${productId}` }, (payload) => {
             setProduct((prev) => prev ? { ...prev, stock_quantity: payload.new.stock_quantity } : null)
           }
@@ -95,7 +126,6 @@ export default function ProductDetailPage() {
     return () => { if (channel) supabase.removeChannel(channel) }
   }, [productId, supabase])
 
-  // ฟังก์ชันอัปเดตตัวเลือกเฉพาะชิ้นนั้นๆ
   const updateSelection = (index: number, field: keyof Selection, value: string | boolean) => {
     setSelections(prev => {
       const updated = [...prev]
@@ -104,8 +134,8 @@ export default function ProductDetailPage() {
     })
   }
 
-  // ✅ คำนวณราคาใหม่: ราคาหลัก + (จำนวนชิ้นที่เลือกแขนยาว * ค่าแขนยาว)
-  const sleeveAddonCount = selections.filter(s => s.isLongSleeve).length
+  // ✅ คิดราคาแขนยาวเฉพาะชิ้นที่เป็น "เสื้อ" และเลือกแขนยาว
+  const sleeveAddonCount = selections.filter(s => s.category === 'shirt' && s.isLongSleeve).length
   const finalUnitPrice = product ? product.price + (sleeveAddonCount * (product.long_sleeve_price || 0)) : 0
 
   const nextImage = () => setCurrentImageIdx((prev) => (prev + 1) % allImages.length)
@@ -114,31 +144,46 @@ export default function ProductDetailPage() {
   const handleAction = (shouldRedirectToCheckout: boolean) => {
     if (!product) return
 
-    // ตรวจสอบว่าเลือกครบทุกชิ้นหรือยัง
-    if (availableSizes.length > 0 && selections.some(s => !s.size)) {
-      alert('กรุณาเลือกไซซ์ให้ครบทุกชิ้นครับ')
-      return
-    }
-    if (availableColors.length > 0 && selections.some(s => !s.color)) {
-      alert('กรุณาเลือกสีให้ครบทุกชิ้นครับ')
-      return
+    // ✅ ตรวจสอบการเลือกข้อมูลเฉพาะสินค้าที่บังคับ (เสื้อ/กระเป๋า)
+    for (const s of selections) {
+      const needsSize = s.category === 'shirt'
+      const needsColor = s.category === 'shirt' || s.category === 'bag'
+
+      if (needsSize && availableSizes.length > 0 && !s.size) {
+        alert(`กรุณาเลือกไซซ์สำหรับ: ${s.name}`)
+        return
+      }
+      if (needsColor && availableColors.length > 0 && !s.color) {
+        alert(`กรุณาเลือกสีสำหรับ: ${s.name}`)
+        return
+      }
     }
 
-    // ✅ รวบรวมข้อความไซซ์ทั้งหมดเพื่อส่งไปหน้าตะกร้า
+    // รวบรวมข้อความไซซ์เพื่อส่งไปหน้าตะกร้า
     let finalSizeText = ''
     if (totalPieces === 1) {
       const s = selections[0]
-      finalSizeText = s.size
-      if (product.category === 'shirt') finalSizeText = `${s.size} ${s.isLongSleeve ? '(แขนยาว)' : '(แขนสั้น)'}`
-      if (s.color) finalSizeText = finalSizeText ? `${finalSizeText} - สี${s.color}` : `สี${s.color}`
+      const needsSize = s.category === 'shirt'
+      const needsColor = s.category === 'shirt' || s.category === 'bag'
+
+      if (!needsSize && !needsColor) {
+        finalSizeText = ''
+      } else {
+        if (needsSize && availableSizes.length > 0) finalSizeText = `${s.size} ${s.isLongSleeve ? '(แขนยาว)' : '(แขนสั้น)'}`
+        if (needsColor && availableColors.length > 0) finalSizeText = finalSizeText ? `${finalSizeText} - สี${s.color}` : `สี${s.color}`
+      }
     } else {
       finalSizeText = selections.map((s, idx) => {
-        let text = s.size || ''
-        if (availableSizes.length > 0 && (product.category === 'shirt' || product.is_set)) {
-          text = text ? `${text} ${s.isLongSleeve ? '(แขนยาว)' : '(แขนสั้น)'}` : `${s.isLongSleeve ? '(แขนยาว)' : '(แขนสั้น)'}`
-        }
-        if (s.color) text = text ? `${text} - สี${s.color}` : `สี${s.color}`
-        return `ชิ้นที่ ${idx + 1}: ${text || 'ค่าเริ่มต้น'}`
+        const needsSize = s.category === 'shirt'
+        const needsColor = s.category === 'shirt' || s.category === 'bag'
+
+        if (!needsSize && !needsColor) return `${s.name} (ชิ้นที่ ${idx + 1}): -`
+
+        let textParts = []
+        if (needsSize && availableSizes.length > 0) textParts.push(`${s.size || ''} ${s.isLongSleeve ? '(แขนยาว)' : '(แขนสั้น)'}`)
+        if (needsColor && availableColors.length > 0) textParts.push(`สี${s.color}`)
+
+        return `${s.name} (ชิ้นที่ ${idx + 1}): ${textParts.join(' - ') || '-'}`
       }).join(' | ')
     }
 
@@ -148,7 +193,7 @@ export default function ProductDetailPage() {
         id: product.id,
         qty: quantity.toString(),
         size: finalSizeText || '',
-        ls: (sleeveAddonCount > 0).toString() // ส่งไปบอกว่ามีแขนยาวเพื่อคิดเงินหน้า checkout (ถ้ามี)
+        ls: (sleeveAddonCount > 0).toString() 
       })
       router.push(`/checkout?${params.toString()}`)
     } else {
@@ -176,13 +221,15 @@ export default function ProductDetailPage() {
   )
 
   const isOutOfStock = !product.is_preorder && product.stock_quantity <= 0
-  const showSleeveOption = product.category === 'shirt' || (product.is_set && availableSizes.length > 0)
   
-  // ตรวจสอบความพร้อมในการซื้อ
-  const isReadyToBuy = !isOutOfStock && selections.length > 0 && selections.every(s => 
-    (availableSizes.length === 0 || s.size) && 
-    (availableColors.length === 0 || s.color)
-  )
+  // ตรวจสอบความพร้อมในการซื้อ โดยคำนึงถึงประเภทสินค้า
+  const isReadyToBuy = !isOutOfStock && selections.length > 0 && selections.every(s => {
+    const needsSize = s.category === 'shirt'
+    const needsColor = s.category === 'shirt' || s.category === 'bag'
+    const sizeOk = !needsSize || availableSizes.length === 0 || s.size !== ''
+    const colorOk = !needsColor || availableColors.length === 0 || s.color !== ''
+    return sizeOk && colorOk
+  })
 
   return (
     <div className="min-h-screen bg-white pb-20">
@@ -257,99 +304,119 @@ export default function ProductDetailPage() {
               </p>
             </div>
 
-            {/* ✅ กล่องตัวเลือกสินค้า วนลูปตามจำนวนชิ้น */}
+            {/* ✅ กล่องตัวเลือกสินค้า วนลูปตามจำนวนชิ้น โดยคัดกรองตาม Category */}
             <div className="flex flex-col gap-6 pt-4 border-t border-gray-100">
-              {selections.map((selection, idx) => (
-                <div key={idx} className={clsx("transition-all", totalPieces > 1 ? "p-6 bg-gray-50 rounded-3xl border border-gray-200" : "")}>
-                  
-                  {totalPieces > 1 && (
-                    <h3 className="text-lg font-black text-gray-900 mb-5 flex items-center gap-2">
-                      <Package className="w-5 h-5 text-purple-600" /> ระบุตัวเลือกสำหรับชิ้นที่ {idx + 1}
-                    </h3>
-                  )}
+              {selections.map((selection, idx) => {
+                const needsSize = selection.category === 'shirt'
+                const needsColor = selection.category === 'shirt' || selection.category === 'bag'
+                const needsSleeve = selection.category === 'shirt'
 
-                  <div className="space-y-6">
-                    {/* ระบบเลือกสี */}
-                    {availableColors.length > 0 && (
-                      <div>
-                        <div className="flex items-center justify-between mb-3">
-                          <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wider flex items-center gap-2">
-                            <Palette className="w-4 h-4" /> เลือกสี
-                          </h4>
-                          <span className="text-sm text-gray-500 font-medium">{selection.color || 'ยังไม่ได้เลือก'}</span>
+                // ✅ ถ้าเป็นสมุด ให้ข้ามการโชว์กล่องไปเลย หรือแสดงเป็นแค่ text ธรรมดา
+                if (!needsSize && !needsColor && !needsSleeve) {
+                  return (
+                    <div key={idx} className={clsx("transition-all", totalPieces > 1 ? "p-4 sm:p-6 bg-gray-50 rounded-3xl border border-gray-200" : "")}>
+                      {totalPieces > 1 && (
+                        <h3 className="text-base sm:text-lg font-black text-gray-900 flex items-center gap-2">
+                          <Package className="w-5 h-5 text-purple-600" /> ชิ้นที่ {idx + 1}: {selection.name}
+                        </h3>
+                      )}
+                      {totalPieces > 1 && <p className="text-sm text-gray-500 mt-2">ไม่ต้องระบุตัวเลือกเพิ่มเติม</p>}
+                    </div>
+                  )
+                }
+
+                return (
+                  <div key={idx} className={clsx("transition-all", totalPieces > 1 ? "p-4 sm:p-6 bg-gray-50 rounded-3xl border border-gray-200" : "")}>
+                    
+                    {totalPieces > 1 && (
+                      <h3 className="text-base sm:text-lg font-black text-gray-900 mb-5 flex items-center gap-2">
+                        <Package className="w-5 h-5 text-purple-600" /> ชิ้นที่ {idx + 1}: {selection.name}
+                      </h3>
+                    )}
+
+                    <div className="space-y-6">
+                      {/* ระบบเลือกสี */}
+                      {needsColor && availableColors.length > 0 && (
+                        <div>
+                          <div className="flex items-center justify-between mb-3">
+                            <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wider flex items-center gap-2">
+                              <Palette className="w-4 h-4" /> เลือกสี
+                            </h4>
+                            <span className="text-sm text-gray-500 font-medium">{selection.color || 'ยังไม่ได้เลือก'}</span>
+                          </div>
+                          <div className="flex flex-wrap gap-2 sm:gap-3">
+                            {availableColors.map((color, cIdx) => (
+                              <button
+                                key={cIdx}
+                                onClick={() => updateSelection(idx, 'color', color)}
+                                className={clsx(
+                                  "px-4 py-2 rounded-full border-2 font-bold transition-all duration-200 text-sm sm:text-base",
+                                  selection.color === color ? "border-gray-900 bg-gray-900 text-white shadow-md transform scale-105" : "border-gray-200 bg-white text-gray-600 hover:border-gray-900 hover:text-gray-900"
+                                )}
+                              >
+                                {color}
+                              </button>
+                            ))}
+                          </div>
                         </div>
-                        <div className="flex flex-wrap gap-2 sm:gap-3">
-                          {availableColors.map((color, cIdx) => (
-                            <button
-                              key={cIdx}
-                              onClick={() => updateSelection(idx, 'color', color)}
-                              className={clsx(
-                                "px-4 py-2 rounded-full border-2 font-bold transition-all duration-200 text-sm sm:text-base",
-                                selection.color === color ? "border-gray-900 bg-gray-900 text-white shadow-md transform scale-105" : "border-gray-200 bg-white text-gray-600 hover:border-gray-900 hover:text-gray-900"
-                              )}
+                      )}
+
+                      {/* ระบบเลือกไซซ์ */}
+                      {needsSize && availableSizes.length > 0 && (
+                        <div>
+                          <div className="flex items-center justify-between mb-3">
+                            <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wider flex items-center gap-2">
+                              <Ruler className="w-4 h-4" /> เลือกขนาด (Size)
+                            </h4>
+                            <span className="text-sm text-gray-500 font-medium">{selection.size ? selection.size.split(':')[0] : 'ยังไม่ได้เลือก'}</span>
+                          </div>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
+                            {availableSizes.map((sizeOption, sIdx) => (
+                              <button
+                                key={sIdx}
+                                onClick={() => updateSelection(idx, 'size', sizeOption)}
+                                className={clsx(
+                                  "px-3 py-2 sm:px-4 sm:py-3 rounded-2xl border-2 text-left transition-all duration-200 group",
+                                  selection.size === sizeOption ? "border-gray-900 bg-gray-900 text-white shadow-md" : "border-gray-200 bg-white text-gray-600 hover:border-gray-900"
+                                )}
+                              >
+                                <div className="font-bold text-base sm:text-lg leading-none">{sizeOption.split(':')[0]}</div>
+                                {sizeOption.split(':')[1] && (
+                                  <div className={clsx("text-[10px] sm:text-xs font-medium mt-1", selection.size === sizeOption ? "text-gray-300" : "text-gray-400 group-hover:text-gray-500")}>
+                                    {sizeOption.split(':')[1].trim()}
+                                  </div>
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* ระบบเลือกรูปแบบแขนเสื้อ */}
+                      {needsSleeve && (
+                        <div>
+                          <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-3">รูปแบบแขนเสื้อ</h4>
+                          <div className="grid grid-cols-2 gap-2 sm:gap-3">
+                            <button 
+                              onClick={() => updateSelection(idx, 'isLongSleeve', false)} 
+                              className={clsx("px-3 py-3 sm:px-4 sm:py-4 rounded-2xl border-2 text-center font-bold transition-all text-sm sm:text-base", !selection.isLongSleeve ? "border-gray-900 bg-gray-900 text-white shadow-md" : "border-gray-200 bg-white text-gray-600 hover:border-gray-900")}
                             >
-                              {color}
+                              แขนสั้น <span className="block text-[10px] sm:text-xs font-medium opacity-70 mt-1">ราคาปกติ</span>
                             </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* ระบบเลือกไซซ์ */}
-                    {availableSizes.length > 0 && (
-                      <div>
-                        <div className="flex items-center justify-between mb-3">
-                          <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wider flex items-center gap-2">
-                            <Ruler className="w-4 h-4" /> เลือกขนาด (Size)
-                          </h4>
-                          <span className="text-sm text-gray-500 font-medium">{selection.size ? selection.size.split(':')[0] : 'ยังไม่ได้เลือก'}</span>
-                        </div>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
-                          {availableSizes.map((sizeOption, sIdx) => (
-                            <button
-                              key={sIdx}
-                              onClick={() => updateSelection(idx, 'size', sizeOption)}
-                              className={clsx(
-                                "px-3 py-2 sm:px-4 sm:py-3 rounded-2xl border-2 text-left transition-all duration-200 group",
-                                selection.size === sizeOption ? "border-gray-900 bg-gray-900 text-white shadow-md" : "border-gray-200 bg-white text-gray-600 hover:border-gray-900"
-                              )}
+                            <button 
+                              onClick={() => updateSelection(idx, 'isLongSleeve', true)} 
+                              className={clsx("px-3 py-3 sm:px-4 sm:py-4 rounded-2xl border-2 text-center font-bold transition-all text-sm sm:text-base", selection.isLongSleeve ? "border-gray-900 bg-gray-900 text-white shadow-md" : "border-gray-200 bg-white text-gray-600 hover:border-gray-900")}
                             >
-                              <div className="font-bold text-base sm:text-lg leading-none">{sizeOption.split(':')[0]}</div>
-                              {sizeOption.split(':')[1] && (
-                                <div className={clsx("text-[10px] sm:text-xs font-medium mt-1", selection.size === sizeOption ? "text-gray-300" : "text-gray-400 group-hover:text-gray-500")}>
-                                  {sizeOption.split(':')[1].trim()}
-                                </div>
-                              )}
+                              แขนยาว <span className="block text-[10px] sm:text-xs font-medium opacity-70 mt-1">{product.long_sleeve_price > 0 ? `+฿${product.long_sleeve_price}` : 'ฟรี'}</span>
                             </button>
-                          ))}
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      )}
+                    </div>
 
-                    {/* ระบบเลือกรูปแบบแขนเสื้อ */}
-                    {showSleeveOption && (
-                      <div>
-                        <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wider mb-3">รูปแบบแขนเสื้อ</h4>
-                        <div className="grid grid-cols-2 gap-2 sm:gap-3">
-                          <button 
-                            onClick={() => updateSelection(idx, 'isLongSleeve', false)} 
-                            className={clsx("px-3 py-3 sm:px-4 sm:py-4 rounded-2xl border-2 text-center font-bold transition-all text-sm sm:text-base", !selection.isLongSleeve ? "border-gray-900 bg-gray-900 text-white shadow-md" : "border-gray-200 bg-white text-gray-600 hover:border-gray-900")}
-                          >
-                            แขนสั้น <span className="block text-[10px] sm:text-xs font-medium opacity-70 mt-1">ราคาปกติ</span>
-                          </button>
-                          <button 
-                            onClick={() => updateSelection(idx, 'isLongSleeve', true)} 
-                            className={clsx("px-3 py-3 sm:px-4 sm:py-4 rounded-2xl border-2 text-center font-bold transition-all text-sm sm:text-base", selection.isLongSleeve ? "border-gray-900 bg-gray-900 text-white shadow-md" : "border-gray-200 bg-white text-gray-600 hover:border-gray-900")}
-                          >
-                            แขนยาว <span className="block text-[10px] sm:text-xs font-medium opacity-70 mt-1">{product.long_sleeve_price > 0 ? `+฿${product.long_sleeve_price}` : 'ฟรี'}</span>
-                          </button>
-                        </div>
-                      </div>
-                    )}
                   </div>
-
-                </div>
-              ))}
+                )
+              })}
             </div>
 
             {/* ระบบเลือกจำนวนชุด */}
