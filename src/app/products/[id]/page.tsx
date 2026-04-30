@@ -161,7 +161,6 @@ export default function ProductDetailPage() {
 
   return (
     <div className="min-h-screen bg-white pb-20">
-      <Navbar />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
         <Link href="/products" className="inline-flex items-center gap-2 text-gray-500 hover:text-gray-900 mb-8 transition-colors">
           <ArrowLeft className="w-4 h-4" /> <span className="font-medium">กลับ</span>

@@ -16,7 +16,6 @@ export default async function Home() {
 
   return (
     <div className="min-h-screen bg-[#f8fafc] font-sans selection:bg-green-200">
-      <Navbar />
       
       {/* Hero Section - Glassmorphism & Green Gradient */}
       <section className="relative pt-24 pb-32 px-4 overflow-hidden flex items-center justify-center min-h-[80vh]">

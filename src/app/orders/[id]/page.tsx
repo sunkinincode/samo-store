@@ -69,7 +69,6 @@ export default function OrderBarcodePage() {
   if (error || !order) {
     return (
       <>
-        <Navbar />
         <div className="max-w-2xl mx-auto px-4 py-20 text-center">
           <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
           <h1 className="text-2xl font-bold text-gray-900 mb-2">ไม่พบคำสั่งซื้อ</h1>
@@ -87,7 +86,6 @@ export default function OrderBarcodePage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Navbar />
       <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8">
         
         <Link href="/orders" className="inline-flex items-center gap-2 text-gray-500 hover:text-gray-900 mb-6 transition-colors">

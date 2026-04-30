@@ -168,7 +168,6 @@ function CheckoutContent() {
   if (!isStoreOpen) {
     return (
       <>
-        <Navbar />
         <div className="max-w-2xl mx-auto px-4 py-20 text-center">
           <div className="bg-red-50 text-red-600 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6"><Clock className="w-10 h-10" /></div>
           <h1 className="text-3xl font-bold text-gray-900 mb-4">ร้านปิดรับออร์เดอร์</h1>
@@ -183,7 +182,6 @@ function CheckoutContent() {
 
   return (
     <>
-      <Navbar />
       <div className="max-w-3xl mx-auto px-4 sm:px-6 py-10 w-full">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-900">ชำระเงิน</h1>
