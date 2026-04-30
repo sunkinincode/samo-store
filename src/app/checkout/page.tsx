@@ -182,7 +182,7 @@ function CheckoutContent() {
     } catch (err) {
       isRequestCompleted = true
       clearTimeout(clientTimeout)
-      setError('เกิดข้อผิดพลาดในการเชื่อมต่อกับเซิร์ฟเวอร์')
+      setError('เกิดข้อผิดพลาดโปรดอัพโหลดสลิปใหม่อีกครั้ง')
       setIsProcessing(false)
     }
   }
