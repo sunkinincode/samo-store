@@ -7,8 +7,8 @@ import clsx from 'clsx'
 
 type SetItem = {
   id: string
-  product_id: string // ✅ เปลี่ยนจากการพิมพ์ชื่อเป็นการอ้างอิง ID สินค้าจริง
-  quantity: number   // ✅ เพิ่มจำนวนชิ้นสำหรับสินค้านั้นๆ ในเซต
+  product_id: string
+  quantity: number
 }
 
 type Product = {
@@ -66,7 +66,6 @@ export default function AdminProductsPage() {
     fetchProducts()
   }, [])
 
-  // ✅ กรองเฉพาะสินค้าเดี่ยว ที่มีสต็อก หรือเป็นพรีออร์เดอร์ เพื่อนำมาเป็นตัวเลือกในเซต
   const availableProducts = products.filter(p => !p.is_set && (p.stock_quantity > 0 || p.is_preorder))
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -98,7 +97,6 @@ export default function AdminProductsPage() {
     })
     setIsSet(product.is_set || false)
     
-    // ✅ จัดการดึง set_items ของเดิมมาแสดงผล (รองรับแบบเก่าและใหม่)
     setSetItems(product.set_items?.map(item => ({
       id: item.id || Date.now().toString(),
       product_id: item.product_id || '',
@@ -131,13 +129,16 @@ export default function AdminProductsPage() {
     setExistingImages(prev => prev.filter((_, idx) => idx !== indexToRemove))
   }
 
-  // ✅ เช็คก่อนว่ามีสินค้าให้จัดเซตไหม
   const handleSetToggle = (checked: boolean) => {
     if (checked && availableProducts.length === 0) {
       alert('ต้องมีสินค้าอย่างน้อย 1 ชิ้นในสต็อกจึงจะสามารถสร้างเซตได้')
       return
     }
     setIsSet(checked)
+    // ✅ รีเซ็ตค่าฟอร์มที่ไม่จำเป็นเมื่อสลับเป็นโหมดจัดเซต
+    if (checked) {
+      setFormData(prev => ({ ...prev, size_info: '', colors: '', long_sleeve_price: '0' }))
+    }
   }
 
   const addSetItem = () => {
@@ -184,22 +185,16 @@ export default function AdminProductsPage() {
         }
       }
 
-      // ✅ ดึงข้อมูล Category ของสินค้าในเซตมาเช็ค (อ้างอิงจาก product_id)
-      const getProductCategory = (pid: string) => products.find(p => p.id === pid)?.category || ''
-      const hasShirtInSet = isSet && setItems.some(item => getProductCategory(item.product_id) === 'shirt')
-      const hasBagInSet = isSet && setItems.some(item => getProductCategory(item.product_id) === 'bag')
-      
-      const requiresSizesColors = formData.category === 'shirt' || hasShirtInSet || hasBagInSet
-
       const payload = {
         name: formData.name,
         description: formData.description,
         price: Number(formData.price),
         stock_quantity: isPreorder ? 0 : Number(formData.stock_quantity),
         category: formData.category,
-        size_info: requiresSizesColors && formData.size_info ? formData.size_info.trim() : null,
-        long_sleeve_price: (formData.category === 'shirt' || hasShirtInSet) ? Number(formData.long_sleeve_price || 0) : 0,
-        colors: requiresSizesColors && formData.colors ? formData.colors.trim() : null,
+        // ✅ ถ้าเป็นเซต ไม่ต้องบันทึก size, color, long_sleeve_price
+        size_info: isSet ? null : (formData.size_info ? formData.size_info.trim() : null),
+        long_sleeve_price: isSet ? 0 : Number(formData.long_sleeve_price || 0),
+        colors: isSet ? null : (formData.colors ? formData.colors.trim() : null),
         image_urls: finalImageUrls,
         image_url: finalImageUrls.length > 0 ? finalImageUrls[0] : null,
         is_set: isSet,
@@ -259,7 +254,7 @@ export default function AdminProductsPage() {
                 <div className="bg-purple-100 p-2 rounded-xl text-purple-700"><Layers className="w-5 h-5" /></div>
                 <div>
                   <h3 className="font-bold text-purple-900">เปิดใช้งาน "โหมดจัดเซต" (Bundle)</h3>
-                  <p className="text-sm text-purple-700 mt-0.5">ขายสินค้าหลายชิ้นรวมกันในราคาเดียว</p>
+                  <p className="text-sm text-purple-700 mt-0.5">ระบบจะดึงตัวเลือกสี/ไซซ์จากสินค้าตั้งต้นมาให้อัตโนมัติ</p>
                 </div>
               </div>
               <label className="relative inline-flex items-center cursor-pointer">
@@ -276,7 +271,6 @@ export default function AdminProductsPage() {
                     <div key={item.id} className="flex flex-col sm:flex-row gap-3 items-start sm:items-center bg-white p-3 rounded-xl border border-gray-100 shadow-sm">
                       <span className="font-bold text-gray-400 w-6">{index + 1}.</span>
                       
-                      {/* ✅ เปลี่ยนเป็น Dropdown เลือกสินค้า */}
                       <select 
                         value={item.product_id || ''} 
                         onChange={(e) => updateSetItem(item.id, 'product_id', e.target.value)} 
@@ -288,7 +282,6 @@ export default function AdminProductsPage() {
                         ))}
                       </select>
 
-                      {/* ✅ Input จำนวนชิ้น */}
                       <div className="flex items-center gap-2">
                         <label className="text-sm font-medium text-gray-600 whitespace-nowrap">จำนวน:</label>
                         <input 
@@ -362,22 +355,23 @@ export default function AdminProductsPage() {
                   </select>
                 </div>
 
-                <div className="space-y-4 border border-gray-100 p-4 bg-gray-50 rounded-2xl">
-                  {isSet && <p className="text-xs font-bold text-purple-600 bg-purple-100 p-2 rounded-lg mb-2">ตัวเลือกด้านล่างจะถูกนำไปใช้กับ "ของทุกชิ้นในเซต" โดยอัตโนมัติ</p>}
-                  
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">บวกราคาเพิ่ม ต่อ 1 ตัว หากเลือกแขนยาว (บาท)</label>
-                    <input type="number" name="long_sleeve_price" value={formData.long_sleeve_price} onChange={handleInputChange} className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900 outline-none transition-all" placeholder="0 (ถ้าไม่มีให้ใส่ 0)" />
+                {/* ✅ ซ่อนกล่องรายละเอียดนี้ หากอยู่ในโหมดจัดเซต (Bundle) */}
+                {!isSet && (
+                  <div className="space-y-4 border border-gray-100 p-4 bg-gray-50 rounded-2xl">
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1.5">บวกราคาเพิ่ม ต่อ 1 ตัว หากเลือกแขนยาว (บาท)</label>
+                      <input type="number" name="long_sleeve_price" value={formData.long_sleeve_price} onChange={handleInputChange} className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900 outline-none transition-all" placeholder="0 (ถ้าไม่มีให้ใส่ 0)" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1.5 flex items-center gap-2"><Ruler className="w-4 h-4" /> ตัวเลือกไซซ์เสื้อ (คั่นด้วยลูกน้ำ)</label>
+                      <textarea name="size_info" value={formData.size_info} onChange={handleInputChange} rows={2} className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900 outline-none transition-all font-mono text-sm" placeholder='S: อก 38" ยาว 26", M: อก 40" ยาว 27"' />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1.5 flex items-center gap-2"><Palette className="w-4 h-4" /> ตัวเลือกสี (คั่นด้วยลูกน้ำ)</label>
+                      <input type="text" name="colors" value={formData.colors} onChange={handleInputChange} className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900 outline-none transition-all font-mono text-sm" placeholder="ขาว, ดำ, กรมท่า" />
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1.5 flex items-center gap-2"><Ruler className="w-4 h-4" /> ตัวเลือกไซซ์เสื้อ (คั่นด้วยลูกน้ำ)</label>
-                    <textarea name="size_info" value={formData.size_info} onChange={handleInputChange} rows={2} className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900 outline-none transition-all font-mono text-sm" placeholder='S: อก 38" ยาว 26", M: อก 40" ยาว 27"' />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1.5 flex items-center gap-2"><Palette className="w-4 h-4" /> ตัวเลือกสี (คั่นด้วยลูกน้ำ)</label>
-                    <input type="text" name="colors" value={formData.colors} onChange={handleInputChange} className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900 outline-none transition-all font-mono text-sm" placeholder="ขาว, ดำ, กรมท่า" />
-                  </div>
-                </div>
+                )}
               </div>
 
               <div className="space-y-4">
@@ -415,7 +409,7 @@ export default function AdminProductsPage() {
         </div>
       )}
 
-      {/* ตารางแสดงสินค้า */}
+      {/* ตารางแสดงสินค้า (เหมือนเดิม) */}
       <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -430,7 +424,6 @@ export default function AdminProductsPage() {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {products.map((product) => {
-                // คำนวณจำนวนชิ้นรวมในเซต
                 const totalPiecesInSet = product.set_items?.reduce((sum, item) => sum + (item.quantity || 1), 0) || 0
 
                 return (
