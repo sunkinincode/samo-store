@@ -24,7 +24,7 @@ export async function processCheckout(formData: FormData, cart: CartItem[], tota
     thunderFormData.append('image', slipFile)
 
     const controller = new AbortController()
-    // ✅ ขยายเวลาเป็น 15 วินาที
+    // ✅ กำหนด Timeout ที่ 15 วินาที
     const timeoutId = setTimeout(() => controller.abort(), 15000) 
 
     const thunderRes = await fetch('https://api.thunder.in.th/v2/verify/bank', {
@@ -53,7 +53,7 @@ export async function processCheckout(formData: FormData, cart: CartItem[], tota
     }
 
     // ==========================================
-    // 🛡️ ระบบรักษาความปลอดภัย: ตรวจสอบบัญชีปลายทาง
+    // 🛡️ ระบบรักษาความปลอดภัย: ตรวจสอบบัญชีปลายทาง (ฉบับปรับปรุง)
     // ==========================================
     const { data: settings } = await supabase
       .from('store_settings')
@@ -66,7 +66,7 @@ export async function processCheckout(formData: FormData, cart: CartItem[], tota
       const receiverProxy = slipData.receiver?.proxy?.value || slipData.receiver?.proxy?.account || ''
       const receiverAccount = slipData.receiver?.account?.bankAccount || slipData.receiver?.account?.value || ''
 
-      // ลบสัญลักษณ์พิเศษให้เหลือแต่ตัวเลข
+      // ลบสัญลักษณ์พิเศษให้เหลือแต่ตัวเลขเพื่อเปรียบเทียบ
       const adminPP = settings.promptpay_phone?.replace(/[^0-9]/g, '') || ''
       const adminBank = settings.bank_account_no?.replace(/[^0-9]/g, '') || ''
       const cleanProxy = receiverProxy.replace(/[^0-9]/g, '')
@@ -74,20 +74,23 @@ export async function processCheckout(formData: FormData, cart: CartItem[], tota
 
       let isDestinationValid = false
 
-      // 1. เช็คพร้อมเพย์ (เทียบ 9 หลักสุดท้าย เผื่อระบบสลิปใส่ 66 นำหน้าแทน 0)
-      if (adminPP && cleanProxy && cleanProxy.endsWith(adminPP.slice(-9))) {
-        isDestinationValid = true
+      // 1. ตรวจสอบ PromptPay (รองรับการเซ็นเซอร์ เช่น xxx-xxx-2030)
+      if (adminPP && cleanProxy && cleanProxy.length >= 4) {
+        // เช็คว่าเลขในสลิปมีอยู่ในเบอร์แอดมิน หรือ เลขแอดมิน 9 หลักท้ายมีอยู่ในสลิป (กรณีมี 66 นำหน้า)
+        if (adminPP.includes(cleanProxy) || cleanProxy.includes(adminPP.slice(-9))) {
+          isDestinationValid = true
+        }
       }
       
-      // 2. เช็คเลขบัญชี (✅ แก้ไขให้รองรับสลิปที่เซ็นเซอร์เลขบัญชี เช่น xxx-x-x2152-x)
-      // เช็คว่าเลขที่แกะมาได้อย่างน้อย 4 ตัว มีอยู่ในเลขบัญชีเต็มๆ ของแอดมินหรือไม่
+      // 2. ตรวจสอบเลขบัญชี (รองรับการเซ็นเซอร์ เช่น xxx-x-x2152-x)
       if (adminBank && cleanAccount && cleanAccount.length >= 4) {
-        if (adminBank.includes(cleanAccount)) {
+        // เช็คว่าเลขที่เหลือจากการเซ็นเซอร์ในสลิป มีอยู่ในเลขบัญชีเต็มของแอดมินหรือไม่
+        if (adminBank.includes(cleanAccount) || cleanAccount.includes(adminBank.slice(-6))) {
           isDestinationValid = true
         }
       }
 
-      // ถ้าไม่ตรงทั้งพร้อมเพย์และบัญชีธนาคาร ให้เตะออกเลย
+      // ถ้าตรวจสอบแล้วไม่ตรงทั้ง PromptPay และบัญชีธนาคาร
       if (!isDestinationValid) {
         return { error: 'บัญชีผู้รับเงินไม่ถูกต้อง! กรุณาโอนเงินเข้าบัญชีของสโมสรนักศึกษาที่ระบุไว้เท่านั้น' }
       }
@@ -96,7 +99,6 @@ export async function processCheckout(formData: FormData, cart: CartItem[], tota
 
   } catch (error: any) {
     if (error.name === 'AbortError') {
-      // ✅ ส่งโค้ด errorType กลับไปบอกหน้าบ้าน
       return { errorType: 'TIMEOUT', error: 'ระบบใช้เวลาตรวจสอบสลิปนานเกินไป (เกิน 15 วินาที)' }
     }
     console.error('Thunder API Exception:', error)
@@ -108,6 +110,7 @@ export async function processCheckout(formData: FormData, cart: CartItem[], tota
       return { error: 'ไม่พบรหัสอ้างอิง (transRef) ในสลิปนี้' }
   }
 
+  // ตรวจสอบสลิปซ้ำ
   const { data: existingSlip } = await supabase
     .from('slip_records')
     .select('id')
@@ -120,6 +123,7 @@ export async function processCheckout(formData: FormData, cart: CartItem[], tota
 
   const orderId = Math.random().toString(36).substring(2, 10).toUpperCase()
 
+  // บันทึกคำสั่งซื้อ
   const { error: orderError } = await supabase
     .from('orders')
     .insert({
@@ -133,12 +137,13 @@ export async function processCheckout(formData: FormData, cart: CartItem[], tota
 
   if (orderError) return { error: `Database Error (Orders): ${orderError.message}` }
 
+  // บันทึกประวัติสลิป
   const senderTh = slipData.sender?.account?.name?.th
   const senderEn = slipData.sender?.account?.name?.en
   const receiverTh = slipData.receiver?.account?.name?.th
   const receiverEn = slipData.receiver?.account?.name?.en
 
-  const { error: slipRecordError } = await supabase
+  await supabase
     .from('slip_records')
     .insert({
       order_id: orderId,
@@ -151,6 +156,7 @@ export async function processCheckout(formData: FormData, cart: CartItem[], tota
       trans_date: slipData.date ? new Date(slipData.date).toISOString() : new Date().toISOString()
     })
 
+  // บันทึกรายการสินค้าในออร์เดอร์
   const orderItemsData = cart.map(item => ({
     order_id: orderId,
     product_id: item.product_id,
@@ -161,6 +167,7 @@ export async function processCheckout(formData: FormData, cart: CartItem[], tota
 
   await supabase.from('order_items').insert(orderItemsData)
 
+  // ตัดสต็อกสินค้า
   for (const item of cart) {
     const { data: productData } = await supabase
       .from('products')
