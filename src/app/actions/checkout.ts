@@ -74,14 +74,17 @@ export async function processCheckout(formData: FormData, cart: CartItem[], tota
 
       let isDestinationValid = false
 
-      // เช็คพร้อมเพย์ (เทียบ 9 หลักสุดท้าย เผื่อระบบสลิปใส่ 66 นำหน้าแทน 0)
+      // 1. เช็คพร้อมเพย์ (เทียบ 9 หลักสุดท้าย เผื่อระบบสลิปใส่ 66 นำหน้าแทน 0)
       if (adminPP && cleanProxy && cleanProxy.endsWith(adminPP.slice(-9))) {
         isDestinationValid = true
       }
       
-      // เช็คเลขบัญชี (เทียบ 6 หลักสุดท้าย เพราะบางธนาคารซ่อนตัวเลขเป็น xxx-x-x1234-x)
-      if (adminBank && cleanAccount && cleanAccount.endsWith(adminBank.slice(-6))) {
-        isDestinationValid = true
+      // 2. เช็คเลขบัญชี (✅ แก้ไขให้รองรับสลิปที่เซ็นเซอร์เลขบัญชี เช่น xxx-x-x2152-x)
+      // เช็คว่าเลขที่แกะมาได้อย่างน้อย 4 ตัว มีอยู่ในเลขบัญชีเต็มๆ ของแอดมินหรือไม่
+      if (adminBank && cleanAccount && cleanAccount.length >= 4) {
+        if (adminBank.includes(cleanAccount)) {
+          isDestinationValid = true
+        }
       }
 
       // ถ้าไม่ตรงทั้งพร้อมเพย์และบัญชีธนาคาร ให้เตะออกเลย
