@@ -52,10 +52,49 @@ export async function processCheckout(formData: FormData, cart: CartItem[], tota
       return { error: `ยอดเงินในสลิป (฿${slipAmount}) ไม่ตรงกับยอดที่ต้องชำระ (฿${totalAmount})` }
     }
 
+    // ==========================================
+    // 🛡️ ระบบรักษาความปลอดภัย: ตรวจสอบบัญชีปลายทาง
+    // ==========================================
+    const { data: settings } = await supabase
+      .from('store_settings')
+      .select('promptpay_phone, bank_account_no')
+      .eq('id', 1)
+      .single()
+
+    if (settings) {
+      // ดึงข้อมูลปลายทางจากสลิป (proxy = พร้อมเพย์, account = เลขบัญชี)
+      const receiverProxy = slipData.receiver?.proxy?.value || slipData.receiver?.proxy?.account || ''
+      const receiverAccount = slipData.receiver?.account?.bankAccount || slipData.receiver?.account?.value || ''
+
+      // ลบสัญลักษณ์พิเศษให้เหลือแต่ตัวเลข
+      const adminPP = settings.promptpay_phone?.replace(/[^0-9]/g, '') || ''
+      const adminBank = settings.bank_account_no?.replace(/[^0-9]/g, '') || ''
+      const cleanProxy = receiverProxy.replace(/[^0-9]/g, '')
+      const cleanAccount = receiverAccount.replace(/[^0-9]/g, '')
+
+      let isDestinationValid = false
+
+      // เช็คพร้อมเพย์ (เทียบ 9 หลักสุดท้าย เผื่อระบบสลิปใส่ 66 นำหน้าแทน 0)
+      if (adminPP && cleanProxy && cleanProxy.endsWith(adminPP.slice(-9))) {
+        isDestinationValid = true
+      }
+      
+      // เช็คเลขบัญชี (เทียบ 6 หลักสุดท้าย เพราะบางธนาคารซ่อนตัวเลขเป็น xxx-x-x1234-x)
+      if (adminBank && cleanAccount && cleanAccount.endsWith(adminBank.slice(-6))) {
+        isDestinationValid = true
+      }
+
+      // ถ้าไม่ตรงทั้งพร้อมเพย์และบัญชีธนาคาร ให้เตะออกเลย
+      if (!isDestinationValid) {
+        return { error: 'บัญชีผู้รับเงินไม่ถูกต้อง! กรุณาโอนเงินเข้าบัญชีของสโมสรนักศึกษาที่ระบุไว้เท่านั้น' }
+      }
+    }
+    // ==========================================
+
   } catch (error: any) {
     if (error.name === 'AbortError') {
       // ✅ ส่งโค้ด errorType กลับไปบอกหน้าบ้าน
-      return { errorType: 'TIMEOUT', error: 'ระบบใช้เวลาตรวจสอบสลิปนานเกินไป (เกิน 20 วินาที)' }
+      return { errorType: 'TIMEOUT', error: 'ระบบใช้เวลาตรวจสอบสลิปนานเกินไป (เกิน 15 วินาที)' }
     }
     console.error('Thunder API Exception:', error)
     return { error: `ระบบตรวจสอบสลิปขัดข้อง: ${error.message}` }
