@@ -52,7 +52,7 @@ export async function processCheckout(formData: FormData, cart: CartItem[], tota
     }
 
     // ==========================================
-    // 🛡️ ระบบรักษาความปลอดภัย: ตรวจสอบบัญชีปลายทาง (อัปเกรดขั้นสุด)
+    // 🛡️ ระบบรักษาความปลอดภัย: ตรวจสอบบัญชีปลายทาง (V.3 สกัดทุกตัวเลข)
     // ==========================================
     const { data: settings } = await supabase
       .from('store_settings')
@@ -61,29 +61,26 @@ export async function processCheckout(formData: FormData, cart: CartItem[], tota
       .single()
 
     if (settings) {
-      // ดึงข้อมูลปลายทางจากสลิป (กวาดมาให้หมดทั้ง proxy และ account)
-      const receiverProxy = slipData.receiver?.proxy?.value || slipData.receiver?.proxy?.account || ''
-      const receiverAccount = slipData.receiver?.account?.bankAccount || slipData.receiver?.account?.value || ''
+      // 1. แปลงข้อมูลผู้รับเงิน (Receiver) ทั้งก้อนให้เป็นตัวอักษร เพื่อไม่ให้พลาดแม้แต่ช่องเดียว
+      const receiverDataString = JSON.stringify(slipData.receiver || {})
 
       const adminPP = settings.promptpay_phone?.replace(/[^0-9]/g, '') || ''
       const adminBank = settings.bank_account_no?.replace(/[^0-9]/g, '') || ''
       
-      const cleanProxy = receiverProxy.replace(/[^0-9]/g, '')
-      const cleanAccount = receiverAccount.replace(/[^0-9]/g, '')
+      // 2. ใช้ Regex สกัดเอา "ตัวเลขทุกชุดที่มี 4 หลักขึ้นไป" ออกมาจากข้อมูลผู้รับ
+      // จะได้ Array ของตัวเลข เช่น ["2030", "014", ...]
+      const numbersInReceiver = receiverDataString.match(/\d{4,}/g) || []
 
       let isDestinationValid = false
 
-      // รวมตัวเลขที่แกะได้จากสลิป (เอาเฉพาะที่มี 4 หลักขึ้นไป)
-      const receiverNumbers = [cleanProxy, cleanAccount].filter(n => n.length >= 4)
-
-      // นำตัวเลขจากสลิปทุกตัว มาเช็คกับ "พร้อมเพย์" และ "เลขบัญชี" ของแอดมินแบบไขว้กัน
-      for (const num of receiverNumbers) {
-        // เช็คกับพร้อมเพย์
+      // 3. วนลูปเอาตัวเลขที่สกัดได้ทุกตัว มาเทียบกับข้อมูลของแอดมิน
+      for (const num of numbersInReceiver) {
+        // เช็คพร้อมเพย์
         if (adminPP && (adminPP.includes(num) || num.includes(adminPP.slice(-9)))) {
           isDestinationValid = true
           break
         }
-        // เช็คกับเลขบัญชี
+        // เช็คเลขบัญชี
         if (adminBank && (adminBank.includes(num) || num.includes(adminBank.slice(-6)))) {
           isDestinationValid = true
           break
