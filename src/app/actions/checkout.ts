@@ -52,7 +52,7 @@ export async function processCheckout(formData: FormData, cart: CartItem[], tota
     }
 
     // ==========================================
-    // 🛡️ ระบบรักษาความปลอดภัย: ตรวจสอบบัญชีปลายทาง (V.3 สกัดทุกตัวเลข)
+    // 🛡️ ระบบรักษาความปลอดภัย: ตรวจสอบบัญชีปลายทาง (V.4 Subsequence Matching)
     // ==========================================
     const { data: settings } = await supabase
       .from('store_settings')
@@ -61,29 +61,55 @@ export async function processCheckout(formData: FormData, cart: CartItem[], tota
       .single()
 
     if (settings) {
-      // 1. แปลงข้อมูลผู้รับเงิน (Receiver) ทั้งก้อนให้เป็นตัวอักษร เพื่อไม่ให้พลาดแม้แต่ช่องเดียว
-      const receiverDataString = JSON.stringify(slipData.receiver || {})
+      const receiverProxy = slipData.receiver?.proxy?.value || slipData.receiver?.proxy?.account || ''
+      const receiverAccount = slipData.receiver?.account?.bankAccount || slipData.receiver?.account?.value || ''
 
       const adminPP = settings.promptpay_phone?.replace(/[^0-9]/g, '') || ''
       const adminBank = settings.bank_account_no?.replace(/[^0-9]/g, '') || ''
       
-      // 2. ใช้ Regex สกัดเอา "ตัวเลขทุกชุดที่มี 4 หลักขึ้นไป" ออกมาจากข้อมูลผู้รับ
-      // จะได้ Array ของตัวเลข เช่น ["2030", "014", ...]
-      const numbersInReceiver = receiverDataString.match(/\d{4,}/g) || []
+      // รองรับกรณี API ส่งพร้อมเพย์มาแบบเริ่มด้วย 66 แทน 0
+      const adminPP_66 = adminPP.startsWith('0') ? '66' + adminPP.slice(1) : adminPP
+
+      // รวมเป้าหมาย (บัญชีแอดมิน) ทั้งหมดที่ต้องเช็ค
+      const targets = [adminPP, adminPP_66, adminBank].filter(Boolean)
+      const rawReceivers = [receiverProxy, receiverAccount].filter(Boolean)
 
       let isDestinationValid = false
 
-      // 3. วนลูปเอาตัวเลขที่สกัดได้ทุกตัว มาเทียบกับข้อมูลของแอดมิน
-      for (const num of numbersInReceiver) {
-        // เช็คพร้อมเพย์
-        if (adminPP && (adminPP.includes(num) || num.includes(adminPP.slice(-9)))) {
-          isDestinationValid = true
-          break
+      // 🔍 ท่าไม้ตายหลัก: ตรวจสอบแบบต่อจิ๊กซอว์ (Subsequence)
+      for (const rawValue of rawReceivers) {
+        // แยกเฉพาะกลุ่มตัวเลขออกมา (เช่น "812-0-xxx527" -> ["812", "0", "527"])
+        const numBlocks = rawValue.match(/\d+/g)
+
+        if (numBlocks && numBlocks.length > 0) {
+          // สร้างรูปแบบการค้นหา เช่น /812.*0.*527/ (หาตัวเลขเหล่านี้ที่เรียงตามลำดับกัน)
+          const pattern = new RegExp(numBlocks.join('.*'))
+
+          for (const target of targets) {
+            // เอาเลขบัญชีเต็มๆ ของร้าน มาทาบดูว่ามีท่อนพวกนี้ซ่อนอยู่ไหม
+            if (pattern.test(target)) {
+              isDestinationValid = true
+              break
+            }
+          }
         }
-        // เช็คเลขบัญชี
-        if (adminBank && (adminBank.includes(num) || num.includes(adminBank.slice(-6)))) {
-          isDestinationValid = true
-          break
+        if (isDestinationValid) break
+      }
+
+      // 🔍 ท่าไม้ตายสำรอง: เผื่อ API ซ่อนเลขบัญชีไว้ในฟิลด์แปลกๆ (แบบ V.3)
+      if (!isDestinationValid) {
+        const receiverDataString = JSON.stringify(slipData.receiver || {})
+        // กวาดหาตัวเลขที่มีความยาว 4 หลักขึ้นไปจากทุกที่
+        const numbersInReceiver = receiverDataString.match(/\d{4,}/g) || []
+        
+        for (const num of numbersInReceiver) {
+          for (const target of targets) {
+            if (target.includes(num) || num.includes(target.slice(-6))) {
+              isDestinationValid = true
+              break
+            }
+          }
+          if (isDestinationValid) break
         }
       }
 
