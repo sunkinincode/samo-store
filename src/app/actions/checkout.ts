@@ -52,69 +52,46 @@ export async function processCheckout(formData: FormData, cart: CartItem[], tota
     }
 
     // ==========================================
-    // 🛡️ ระบบรักษาความปลอดภัย: ตรวจสอบบัญชีปลายทาง (V.4 Subsequence Matching)
+    // 🛡️ ระบบรักษาความปลอดภัย: ตรวจสอบจากชื่อบัญชีผู้รับ (V.5 จบปัญหาเซ็นเซอร์เลขบัญชี)
     // ==========================================
+    // ดึงเฉพาะชื่อบัญชีจากฐานข้อมูลมาเทียบ
     const { data: settings } = await supabase
       .from('store_settings')
-      .select('promptpay_phone, bank_account_no')
+      .select('bank_account_name')
       .eq('id', 1)
       .single()
 
-    if (settings) {
-      const receiverProxy = slipData.receiver?.proxy?.value || slipData.receiver?.proxy?.account || ''
-      const receiverAccount = slipData.receiver?.account?.bankAccount || slipData.receiver?.account?.value || ''
+    if (settings && settings.bank_account_name) {
+      const receiverTh = slipData.receiver?.account?.name?.th || ''
+      const receiverEn = slipData.receiver?.account?.name?.en || ''
 
-      const adminPP = settings.promptpay_phone?.replace(/[^0-9]/g, '') || ''
-      const adminBank = settings.bank_account_no?.replace(/[^0-9]/g, '') || ''
-      
-      // รองรับกรณี API ส่งพร้อมเพย์มาแบบเริ่มด้วย 66 แทน 0
-      const adminPP_66 = adminPP.startsWith('0') ? '66' + adminPP.slice(1) : adminPP
+      // ฟังก์ชันทำความสะอาดชื่อ: ลบช่องว่างและคำนำหน้า เพื่อไม่ให้เกิด Error จากการเว้นวรรค
+      const cleanName = (name: string) => {
+        return name
+          .replace(/นาย|นางสาว|นาง|น\.ส\.|Mr\.|Mrs\.|Ms\./g, '') // ลบคำนำหน้า
+          .replace(/\s+/g, '') // ลบช่องว่างทั้งหมด
+          .toLowerCase() // ปรับเป็นพิมพ์เล็ก (กรณีชื่อภาษาอังกฤษ)
+      }
 
-      // รวมเป้าหมาย (บัญชีแอดมิน) ทั้งหมดที่ต้องเช็ค
-      const targets = [adminPP, adminPP_66, adminBank].filter(Boolean)
-      const rawReceivers = [receiverProxy, receiverAccount].filter(Boolean)
+      const adminNameCleaned = cleanName(settings.bank_account_name)
+      const slipNameThCleaned = cleanName(receiverTh)
+      const slipNameEnCleaned = cleanName(receiverEn)
 
       let isDestinationValid = false
 
-      // 🔍 ท่าไม้ตายหลัก: ตรวจสอบแบบต่อจิ๊กซอว์ (Subsequence)
-      for (const rawValue of rawReceivers) {
-        // แยกเฉพาะกลุ่มตัวเลขออกมา (เช่น "812-0-xxx527" -> ["812", "0", "527"])
-        const numBlocks = rawValue.match(/\d+/g)
-
-        if (numBlocks && numBlocks.length > 0) {
-          // สร้างรูปแบบการค้นหา เช่น /812.*0.*527/ (หาตัวเลขเหล่านี้ที่เรียงตามลำดับกัน)
-          const pattern = new RegExp(numBlocks.join('.*'))
-
-          for (const target of targets) {
-            // เอาเลขบัญชีเต็มๆ ของร้าน มาทาบดูว่ามีท่อนพวกนี้ซ่อนอยู่ไหม
-            if (pattern.test(target)) {
-              isDestinationValid = true
-              break
-            }
-          }
-        }
-        if (isDestinationValid) break
+      // ตรวจสอบว่าชื่อในสลิป (ไทยหรืออังกฤษ) ตรงกับชื่อแอดมินในระบบหรือไม่
+      // ใช้ .includes() เผื่อกรณีสลิปมาแค่ชื่อจริง แต่นามสกุลโดนตัด
+      if (adminNameCleaned && slipNameThCleaned && (adminNameCleaned.includes(slipNameThCleaned) || slipNameThCleaned.includes(adminNameCleaned))) {
+        isDestinationValid = true
       }
-
-      // 🔍 ท่าไม้ตายสำรอง: เผื่อ API ซ่อนเลขบัญชีไว้ในฟิลด์แปลกๆ (แบบ V.3)
-      if (!isDestinationValid) {
-        const receiverDataString = JSON.stringify(slipData.receiver || {})
-        // กวาดหาตัวเลขที่มีความยาว 4 หลักขึ้นไปจากทุกที่
-        const numbersInReceiver = receiverDataString.match(/\d{4,}/g) || []
-        
-        for (const num of numbersInReceiver) {
-          for (const target of targets) {
-            if (target.includes(num) || num.includes(target.slice(-6))) {
-              isDestinationValid = true
-              break
-            }
-          }
-          if (isDestinationValid) break
-        }
+      if (adminNameCleaned && slipNameEnCleaned && (adminNameCleaned.includes(slipNameEnCleaned) || slipNameEnCleaned.includes(adminNameCleaned))) {
+        isDestinationValid = true
       }
 
       if (!isDestinationValid) {
-        return { error: 'บัญชีผู้รับเงินไม่ถูกต้อง! กรุณาโอนเงินเข้าบัญชีของสโมสรนักศึกษาที่ระบุไว้เท่านั้น' }
+        // แจ้งเตือนโดยบอกด้วยว่าโอนไปชื่อใคร เพื่อให้ลูกค้ารู้ตัว
+        const foundName = receiverTh || receiverEn || 'ไม่ทราบชื่อ'
+        return { error: `ชื่อบัญชีผู้รับเงินไม่ถูกต้อง! (ตรวจพบ: ${foundName}) กรุณาโอนเงินเข้าบัญชีของสโมสรนักศึกษาที่ระบุไว้เท่านั้น` }
       }
     }
     // ==========================================
