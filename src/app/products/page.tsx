@@ -12,7 +12,7 @@ export default async function ProductsPage() {
   const { data: { user } } = await supabase.auth.getUser()
 
   const [{ data: products }, { data: settings }] = await Promise.all([
-    supabase.from('products').select('*').order('created_at', { ascending: false }),
+    supabase.from('products').select('id,name,price,stock_quantity,image_url,image_urls,category,description,size_info,long_sleeve_price,colors,is_set,set_items,is_preorder').order('created_at', { ascending: false }),
     supabase.from('store_settings').select('sale_start, sale_end').eq('id', 1).single()
   ])
 

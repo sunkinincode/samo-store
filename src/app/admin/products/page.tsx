@@ -15,6 +15,7 @@ type Product = {
   id: string
   name: string
   price: number
+  cost_price: number | null
   stock_quantity: number
   image_url: string
   image_urls: string[] | null
@@ -40,6 +41,7 @@ export default function AdminProductsPage() {
     name: '',
     description: '',
     price: '',
+    cost_price: '',
     stock_quantity: '',
     category: 'shirt',
     size_info: '',
@@ -75,7 +77,7 @@ export default function AdminProductsPage() {
   const resetForm = () => {
     setIsAdding(false)
     setEditingId(null)
-    setFormData({ name: '', description: '', price: '', stock_quantity: '', category: 'shirt', size_info: '', long_sleeve_price: '', colors: '' })
+    setFormData({ name: '', description: '', price: '', cost_price: '', stock_quantity: '', category: 'shirt', size_info: '', long_sleeve_price: '', colors: '' })
     setIsSet(false)
     setSetItems([])
     setIsPreorder(false)
@@ -89,6 +91,7 @@ export default function AdminProductsPage() {
       name: product.name,
       description: product.description || '',
       price: product.price.toString(),
+      cost_price: (product.cost_price ?? '').toString(),
       stock_quantity: product.stock_quantity.toString(),
       category: product.category,
       size_info: product.size_info || '',
@@ -189,6 +192,7 @@ export default function AdminProductsPage() {
         name: formData.name,
         description: formData.description,
         price: Number(formData.price),
+        cost_price: Number(formData.cost_price) || 0,
         stock_quantity: isPreorder ? 0 : Number(formData.stock_quantity),
         category: formData.category,
         // ✅ ถ้าเป็นเซต ไม่ต้องบันทึก size, color, long_sleeve_price
@@ -311,8 +315,13 @@ export default function AdminProductsPage() {
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">ราคาสุทธิ (บาท)</label>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">ราคาขาย (บาท)</label>
                     <input required type="number" name="price" value={formData.price} onChange={handleInputChange} className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900 outline-none transition-all" placeholder="0" />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">ต้นทุน (บาท)</label>
+                    <input type="number" name="cost_price" value={formData.cost_price} onChange={handleInputChange} className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900 outline-none transition-all" placeholder="0" />
                   </div>
 
                   <div>

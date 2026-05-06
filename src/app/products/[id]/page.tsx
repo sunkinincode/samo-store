@@ -30,6 +30,7 @@ type Product = {
   is_preorder: boolean
   is_set: boolean
   set_items: SetItem[] | null
+  cost_price?: number | null
 }
 
 type Selection = {
@@ -71,7 +72,7 @@ export default function ProductDetailPage() {
     let channel: ReturnType<typeof supabase.channel>
 
     const fetchProductAndSubscribe = async () => {
-      const { data, error } = await supabase.from('products').select('*').eq('id', productId).single()
+      const { data, error } = await supabase.from('products').select('id,name,price,stock_quantity,image_url,image_urls,category,description,size_info,long_sleeve_price,colors,is_preorder,is_set,set_items').eq('id', productId).single()
       if (data) {
         setProduct(data)
         
