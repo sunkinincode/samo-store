@@ -224,7 +224,7 @@ async function getProductProfitBreakdown(supabase: any): Promise<ExtendedProfitI
   if (!orderItems || orderItems.length === 0) return []
 
   // ดึงชื่อสินค้ามาเตรียมไว้ก่อน เพื่อใช้วิเคราะห์เซต
-  const productIds = [...new Set(orderItems.map(item => item.product_id))]
+  const productIds = [...new Set(orderItems.map((item: any) => item.product_id))]
   const { data: products } = await supabase
     .from('products')
     .select('id, name')
